@@ -5,9 +5,14 @@ import {
   ChevronRight, Play, Pause, RotateCcw, Send, Bot, User, Flame, Eye, Layers,
   Gauge, Crosshair, Hexagon, Plus, X, Check, Star, ArrowUpRight, Timer, Flag,
   Video, Upload, Film, Crown, Swords, Database, Key, Link2, Wifi, Cpu, FileVideo,
-  DollarSign, Trash2, Wand2, GitCompare, AlertCircle, CheckCircle2, ExternalLink
+  DollarSign, Trash2, Wand2, GitCompare, AlertCircle, CheckCircle2, ExternalLink,
+  CalendarDays, BrainCircuit, GraduationCap
 } from 'lucide-react'
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, Cell } from 'recharts'
+import { makeFeatures, predict, OUTCOMES, OUTCOME_LABEL, OUTCOME_SHORT } from './lib/model'
+import { actions, useMemory } from './lib/store'
+import FixturesView from './views/FixturesView'
+import MemoryView from './views/MemoryView'
 
 // --- DATA ---
 const TEAMS = [
@@ -49,7 +54,8 @@ export default function App() {
   const [active, setActive] = useState('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [enabled, setEnabled] = useState({
-    dashboard: true, predictor: true, chat: true, tactics: true, live: true, scout: true, video: true, fantasy: true, versus: true, api: true
+    dashboard: true, predictor: true, fixtures: true, video: true, live: true, fantasy: true,
+    versus: true, chat: true, tactics: true, scout: true, memory: true, api: true
   })
   const [homeTeam, setHomeTeam] = useState(TEAMS[1])
   const [awayTeam, setAwayTeam] = useState(TEAMS[2])
@@ -74,6 +80,9 @@ export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState(null)
   const [notifications, setNotifications] = useState(true)
   const chatEndRef = useRef(null)
+
+  // MEMORY / LEARNING
+  const { state: memState, model, stats: memStats, memories } = useMemory()
 
   // VIDEO IA STATE
   const [videoFile, setVideoFile] = useState(null)
@@ -269,25 +278,50 @@ export default function App() {
   const generatePrediction = () => {
     setPredLoading(true)
     setTimeout(() => {
-      const diff = homeTeam.rating - awayTeam.rating + (Math.random() * 6 - 3)
-      const homeProb = Math.max(15, Math.min(75, 45 + diff * 1.8))
-      const awayProb = Math.max(10, Math.min(60, 38 - diff * 1.2))
-      const drawProb = 100 - homeProb - awayProb
+      const match = {
+        home: homeTeam.name,
+        away: awayTeam.name,
+        league: 'Ligue 1',
+        kickoff: new Date().toISOString(),
+        homeRating: homeTeam.rating,
+        awayRating: awayTeam.rating,
+        homeForm: homeTeam.form,
+        awayForm: awayTeam.form,
+        homeXg: +(0.8 + (homeTeam.rating - 60) * 0.045).toFixed(2),
+        awayXg: +(0.8 + (awayTeam.rating - 60) * 0.045).toFixed(2),
+        homeShort: homeTeam.short,
+        awayShort: awayTeam.short,
+      }
+      const features = makeFeatures(match)
+      const p = predict(model, features)
+      const mem = memState.autoLearn
+        ? actions.record(
+            { ...match, id: `predictor-${homeTeam.id}-${awayTeam.id}`, features },
+            { source: 'prédicteur' }
+          )
+        : { matchId: `predictor-${homeTeam.id}-${awayTeam.id}`, id: null }
+
       setPrediction({
-        homeProb: homeProb.toFixed(1), drawProb: drawProb.toFixed(1), awayProb: awayProb.toFixed(1),
-        xgHome: (1.2 + diff * 0.04 + Math.random() * 0.4).toFixed(2),
-        xgAway: (1.1 - diff * 0.03 + Math.random() * 0.4).toFixed(2),
-        score: `${Math.round(0.8 + homeProb / 30)} - ${Math.round(0.7 + awayProb / 35)}`,
-        confidence: Math.round(72 + Math.random() * 15),
+        matchId: mem.matchId,
+        memId: mem.id,
+        features,
+        picked: p.pick,
+        homeProb: (p.list[0] * 100).toFixed(1),
+        drawProb: (p.list[1] * 100).toFixed(1),
+        awayProb: (p.list[2] * 100).toFixed(1),
+        xgHome: p.lambdaHome.toFixed(2),
+        xgAway: p.lambdaAway.toFixed(2),
+        score: p.scoreline,
+        confidence: Math.round(p.confidence),
         factors: [
-          { label: 'Forme récente', home: 68 + diff, away: 60 - diff, icon: TrendingUp },
+          { label: 'Forme récente', home: 60 + features.form * 30, away: 60 - features.form * 30, icon: TrendingUp },
           { label: 'Avantage domicile', home: 72, away: 28, icon: Shield },
-          { label: 'xG créés (5 matchs)', home: 9.2, away: 7.8, icon: Target },
-          { label: 'Blessures / suspensions', home: 85, away: 62, icon: Activity },
-        ]
+          { label: 'xG créés (5 matchs)', home: 7 + features.xg * 2, away: 7 - features.xg * 2, icon: Target },
+          { label: 'Niveau / rating', home: 50 + features.rating * 20, away: 50 - features.rating * 20, icon: Activity },
+        ],
       })
       setPredLoading(false)
-    }, 1200)
+    }, 950)
   }
 
   const sendChat = () => {
@@ -341,9 +375,12 @@ export default function App() {
     if (squad[0]) setFantasyCaptain(squad[0].id)
   }
 
+  const predictionMemory = prediction?.memId ? memories.find(m => m.id === prediction.memId) : null
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, enabled: enabled.dashboard },
     { id: 'predictor', label: 'Prédicteur IA', icon: Zap, badge: 'IA', enabled: enabled.predictor },
+    { id: 'fixtures', label: 'Matchs J/J+1', icon: CalendarDays, badge: 'AUTO', enabled: enabled.fixtures },
     { id: 'video', label: 'Vidéo IA', icon: Video, badge: 'NEW', enabled: enabled.video },
     { id: 'live', label: 'Live Center', icon: Radio, dot: true, enabled: enabled.live },
     { id: 'fantasy', label: 'Fantasy Lab', icon: Crown, badge: 'NEW', enabled: enabled.fantasy },
@@ -351,6 +388,7 @@ export default function App() {
     { id: 'chat', label: 'Assistant IA', icon: MessageCircle, enabled: enabled.chat },
     { id: 'tactics', label: 'Tactique', icon: MapPinned, enabled: enabled.tactics },
     { id: 'scout', label: 'Scout Lab', icon: Search, enabled: enabled.scout },
+    { id: 'memory', label: 'Mémoire IA', icon: BrainCircuit, badge: 'LEARN', enabled: enabled.memory },
     { id: 'api', label: 'API Connect', icon: Database, enabled: enabled.api },
   ].filter(n => n.enabled)
 
@@ -397,7 +435,7 @@ export default function App() {
 
         <div className="p-3 border-t border-white/[0.06]">
           <button onClick={() => setActive('settings')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm ${active === 'settings' ? 'bg-white/[0.07] text-white' : 'text-white/60 hover:text-white hover:bg-white/[0.05]'}`}>
-            <Settings size={18} /> Gérer les options <span className="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">{Object.values(enabled).filter(Boolean).length}/10</span>
+            <Settings size={18} /> Gérer les options <span className="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">{Object.values(enabled).filter(Boolean).length}/12</span>
           </button>
           <div className="mt-3 flex items-center gap-3 px-2">
             <img src="https://i.pravatar.cc/100?img=8" className="w-9 h-9 rounded-full border border-white/10" />
@@ -419,16 +457,17 @@ export default function App() {
 
             <div className="hidden md:flex items-center gap-2 text-sm">
               <span className="text-white/40">FootballAI</span><ChevronRight size={14} className="text-white/20" />
-              <span className="font-semibold capitalize">{active === 'dashboard' ? 'Dashboard' : active === 'predictor' ? 'Prédicteur IA' : active === 'video' ? 'Vidéo IA' : active === 'chat' ? 'Assistant IA' : active === 'tactics' ? 'Tableau Tactique' : active === 'live' ? 'Live Center' : active === 'scout' ? 'Scout Lab' : active === 'fantasy' ? 'Fantasy Lab' : active === 'versus' ? 'Versus' : active === 'api' ? 'API Connect' : 'Options'}</span>
+              <span className="font-semibold capitalize">{active === 'dashboard' ? 'Dashboard' : active === 'predictor' ? 'Prédicteur IA' : active === 'video' ? 'Vidéo IA' : active === 'chat' ? 'Assistant IA' : active === 'tactics' ? 'Tableau Tactique' : active === 'live' ? 'Live Center' : active === 'scout' ? 'Scout Lab' : active === 'fantasy' ? 'Fantasy Lab' : active === 'versus' ? 'Versus' : active === 'api' ? 'API Connect' : active === 'fixtures' ? 'Matchs du jour & demain' : active === 'memory' ? 'Mémoire & Apprentissage' : 'Options'}</span>
               {active === 'live' && <span className="ml-2 inline-flex items-center gap-1.5 bg-red-500 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-full"><span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" /> LIVE</span>}
               {(active === 'video' || active === 'fantasy' || active === 'versus') && <span className="ml-2 bg-violet-600 text-white text-[11px] font-black px-2 py-1 rounded-full">NOUVEAU</span>}
+              {(active === 'fixtures' || active === 'memory') && <span className="ml-2 bg-[#22c55e] text-black text-[11px] font-black px-2 py-1 rounded-full">MÉMOIRE v{model.generation}</span>}
             </div>
 
             <div className="ml-auto flex items-center gap-2">
               <div className="hidden sm:flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-full px-3 py-1.5">
                 <div className="w-2 h-2 bg-[#22c55e] rounded-full animate-pulse" />
-                <span className="text-xs font-medium text-white/80">IA en ligne</span>
-                <span className="text-[11px] bg-[#22c55e] text-black font-extrabold px-2 py-0.5 rounded-full">98.4%</span>
+                <span className="text-xs font-medium text-white/80">IA en ligne · gén. {model.generation}</span>
+                <span className="text-[11px] bg-[#22c55e] text-black font-extrabold px-2 py-0.5 rounded-full">{memStats.accuracy.toFixed(1)}%</span>
               </div>
               <div className="flex items-center gap-1 bg-[#111b11] border border-white/10 rounded-full p-1">
                 <button className="px-3 py-1.5 rounded-full bg-white text-black text-xs font-bold">Saison 24/25</button>
@@ -455,7 +494,7 @@ export default function App() {
                 <div className="relative flex flex-col lg:flex-row gap-6 lg:items-center justify-between">
                   <div className="max-w-[640px]">
                     <div className="inline-flex items-center gap-2 bg-[#22c55e]/15 border border-[#22c55e]/20 text-[#86efac] text-xs font-bold px-3 py-1.5 rounded-full">
-                      <Gauge size={14} /> NOUVEAU • Vidéo IA + Fantasy + API Connect • v5.0
+                      <Gauge size={14} /> NOUVEAU • Matchs J/J+1 + Mémoire apprenante • v6.0
                     </div>
                     <h1 className="mt-4 text-[28px] lg:text-[40px] font-black leading-[0.95] tracking-tight">
                       L'intelligence qui<br />
@@ -464,25 +503,26 @@ export default function App() {
                     <p className="mt-3 text-white/60 text-[14px] lg:text-[15px] leading-relaxed">Analyse 1.2M+ datapoints par match • xG, pressing, transitions • Vidéo IA + Fantasy + API temps réel.</p>
                     <div className="mt-6 flex flex-wrap gap-3">
                       <button onClick={() => setActive('predictor')} className="inline-flex items-center gap-2 bg-[#22c55e] text-black font-extrabold px-5 py-3 rounded-full hover:bg-[#16a34a] transition">Lancer une prédiction <ArrowUpRight size={16} /></button>
+                      <button onClick={() => setActive('fixtures')} className="inline-flex items-center gap-2 bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] text-white font-bold px-5 py-3 rounded-full">Matchs du jour <CalendarDays size={16} /></button>
                       <button onClick={() => setActive('video')} className="inline-flex items-center gap-2 bg-violet-600 text-white font-bold px-5 py-3 rounded-full">Analyser une vidéo <Video size={16} /></button>
                     </div>
                   </div>
                   <div className="lg:w-[360px] shrink-0 grid grid-cols-2 gap-3">
                     <div className="glass rounded-2xl p-4">
-                      <div className="text-white/50 text-xs font-semibold tracking-wide">MATCHS ANALYSÉS</div>
-                      <div className="text-2xl font-black mt-1">12,847</div>
-                      <div className="text-[#22c55e] text-xs font-bold flex items-center gap-1"><TrendingUp size={12} />+14% cette semaine</div>
+                      <div className="text-white/50 text-xs font-semibold tracking-wide">PRÉDICTIONS MÉMORISÉES</div>
+                      <div className="text-2xl font-black mt-1">{memStats.total.toLocaleString('fr-FR')}</div>
+                      <div className="text-[#22c55e] text-xs font-bold flex items-center gap-1"><TrendingUp size={12} />{memStats.pendingCount} en attente de résultat</div>
                     </div>
                     <div className="glass rounded-2xl p-4">
                       <div className="text-white/50 text-xs font-semibold tracking-wide">PRÉCISION IA</div>
-                      <div className="text-2xl font-black mt-1">89.3%</div>
-                      <div className="text-white/50 text-xs">sur 1X2</div>
+                      <div className="text-2xl font-black mt-1">{memStats.accuracy.toFixed(1)}%</div>
+                      <div className="text-white/50 text-xs">{memStats.resolvedCount} résultats appris</div>
                     </div>
                     <div className="col-span-2 glass rounded-2xl p-4 flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-[#22c55e] grid place-items-center text-black"><Brain size={18} /></div>
                       <div>
-                        <div className="text-sm font-bold">3 nouveautés majeures</div>
-                        <div className="text-xs text-white/50">Vidéo IA • Fantasy Lab • API Connect</div>
+                        <div className="text-sm font-bold">Mémoire IA — génération {model.generation}</div>
+                        <div className="text-xs text-white/50">{memStats.resolvedCount} résultats • {memState.lessons.length} leçons • {model.epochs || 0} epochs</div>
                       </div>
                     </div>
                   </div>
@@ -562,8 +602,10 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
+                  { t: 'Matchs J/J+1', d: 'Calendrier + pronos auto', icon: CalendarDays, id: 'fixtures', grad: 'from-sky-500 to-blue-600' },
+                  { t: 'Mémoire IA', d: 'Apprentissage & leçons', icon: BrainCircuit, id: 'memory', grad: 'from-violet-600 to-indigo-600' },
                   { t: 'Prédicteur IA', d: 'Score exact + probas', icon: Zap, id: 'predictor', grad: 'from-[#22c55e] to-[#15803d]' },
                   { t: 'Vidéo IA', d: 'Upload & analyse auto', icon: Video, id: 'video', grad: 'from-violet-600 to-indigo-600' },
                   { t: 'Fantasy Lab', d: 'Draft + capitaine IA', icon: Crown, id: 'fantasy', grad: 'from-yellow-500 to-orange-600' },
@@ -585,7 +627,7 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex flex-wrap gap-3 items-center justify-between">
                 <h1 className="text-[24px] font-black tracking-tight flex items-center gap-3"><span className="w-9 h-9 rounded-xl bg-[#22c55e] text-black grid place-items-center"><Zap size={18} /></span> Prédicteur IA <span className="text-xs bg-[#22c55e] text-black font-black px-2.5 py-1 rounded-full">v4.2</span></h1>
-                <div className="text-xs text-white/50 flex items-center gap-2"><Clock size={14} /> Dernière MAJ il y a 12 min • données Opta</div>
+                <div className="text-xs text-white/50 flex items-center gap-2"><BrainCircuit size={14} /> Modèle gén. {model.generation} • {memStats.resolvedCount} résultats appris • précision {memStats.accuracy.toFixed(1)}%</div>
               </div>
 
               <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-6">
@@ -687,12 +729,52 @@ export default function App() {
                           ))}
                         </div>
                       </div>
+
+                      {/* MÉMOIRE IA */}
+                      <div className="rounded-2xl border border-violet-500/25 bg-violet-600/10 p-3">
+                        <div className="text-xs font-bold text-violet-300 flex items-center gap-1.5">
+                          <BrainCircuit size={13} /> Mémoire IA
+                          <span className="ml-auto text-[10px] bg-white/10 px-2 py-0.5 rounded-full font-bold text-white/60">précision {memStats.accuracy.toFixed(1)}%</span>
+                        </div>
+                        {!prediction.memId ? (
+                          <div className="text-[11px] text-white/60 mt-1.5">
+                            Apprentissage continu désactivé — aucune prédiction n'est mémorisée.
+                            <button onClick={() => setActive('memory')} className="ml-1 underline font-bold text-violet-300">L'activer →</button>
+                          </div>
+                        ) : predictionMemory?.outcome ? (
+                          <div className="text-[11px] text-white/70 mt-1.5 leading-relaxed">
+                            Résultat enregistré ({OUTCOME_LABEL[predictionMemory.outcome]}) — le modèle a ajusté ses poids et enregistré la leçon.
+                            <button onClick={() => setActive('memory')} className="ml-1 underline font-bold text-[#86efac]">Voir la mémoire →</button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-[11px] text-white/50 mt-1">Prédiction mémorisée. Saisis le résultat réel pour que l'IA apprenne de ce match :</div>
+                            <div className="mt-2 grid grid-cols-3 gap-1.5">
+                              {OUTCOMES.map(o => (
+                                <button
+                                  key={o}
+                                  onClick={() => actions.resolveQuick(prediction.memId, o)}
+                                  className="bg-white/[0.07] hover:bg-[#22c55e] hover:text-black border border-white/10 rounded-lg py-1.5 text-[11px] font-bold transition"
+                                >
+                                  {OUTCOME_SHORT[o]} · {o === 'home' ? homeTeam.short : o === 'away' ? awayTeam.short : 'Nul'}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
             </div>
           )}
+
+          {active === 'fixtures' && (
+            <FixturesView apiKey={apiKey} apiProvider={apiProvider} onOpenMemory={() => setActive('memory')} />
+          )}
+
+          {active === 'memory' && <MemoryView onOpenFixtures={() => setActive('fixtures')} />}
 
           {/* VIDEO IA */}
           {active === 'video' && (
@@ -1507,7 +1589,7 @@ export default function App() {
             <div className="max-w-[900px] space-y-6">
               <div>
                 <h1 className="text-[24px] font-black flex items-center gap-3"><span className="w-9 h-9 rounded-xl bg-white text-black grid place-items-center"><Settings size={18} /></span> Gérer les options</h1>
-                <p className="text-white/50 text-sm mt-1">Active ou désactive les modules • {Object.values(enabled).filter(Boolean).length}/10 actifs</p>
+                <p className="text-white/50 text-sm mt-1">Active ou désactive les modules • {Object.values(enabled).filter(Boolean).length}/12 actifs</p>
               </div>
 
               <div className="glass-strong rounded-[24px] p-6">
@@ -1517,6 +1599,8 @@ export default function App() {
                   {[
                     { id: 'dashboard', title: 'Dashboard', desc: 'Vue d’ensemble, KPIs, momentum xG', icon: LayoutDashboard },
                     { id: 'predictor', title: 'Prédicteur IA', desc: 'Prédictions, probas, xG, score exact', icon: Zap },
+                    { id: 'fixtures', title: 'Matchs J/J+1', desc: 'Calendrier auto du jour et de demain', icon: CalendarDays },
+                    { id: 'memory', title: 'Mémoire IA', desc: 'Apprentissage continu, leçons, consolidation', icon: BrainCircuit },
                     { id: 'video', title: 'Vidéo IA', desc: 'Upload & analyse auto YOLOv8', icon: Video },
                     { id: 'live', title: 'Live Center', desc: 'Scores en direct + xG live', icon: Radio },
                     { id: 'fantasy', title: 'Fantasy Lab', desc: 'Draft 11 joueurs + capitaine', icon: Crown },
@@ -1562,6 +1646,8 @@ export default function App() {
                 <h3 className="font-bold">Toutes les options sont débloquées ! 🎉</h3>
                 <div className="mt-4 grid sm:grid-cols-3 gap-3">
                   {[
+                    { t: 'Matchs J/J+1', d: 'Calendrier réel + pronos auto', tag: '✓ Live' },
+                    { t: 'Mémoire apprenante', d: 'Leçons, calibration, consolidation', tag: '✓ Live' },
                     { t: 'Analyse vidéo IA', d: 'Upload → détection YOLOv8', tag: '✓ Live' },
                     { t: 'Fantasy League', d: 'Draft + capitaine + projection', tag: '✓ Live' },
                     { t: 'Versus', d: 'Radar + barres + verdict IA', tag: '✓ Live' },
