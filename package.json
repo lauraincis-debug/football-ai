@@ -1,0 +1,22 @@
+{
+  "name": "football-ai-ultra",
+  "private": true,
+  "version": "4.0.0",
+  "description": "Système prédictif football adaptatif v4 (Live In-Play, Absences Stars, Bankroll & 3 Tickets Auto, Cloé IA Ultra)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build && vite build --config vite.cloe.config.js && vite build --config vite.cloe-app.config.js",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test:model": "node scripts/verify-model.mjs",
+    "deploy": "./deploy-firebase.sh"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.5"
+  }
+}

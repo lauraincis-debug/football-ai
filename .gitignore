@@ -1,0 +1,8 @@
+# Dépendances & caches locaux (NOTE : www/ est volontairement versionné pour déploiement immédiat sur Firebase Hosting !)
+node_modules/
+.cache/
+.firebase/
+firebase-debug.log*
+.DS_Store
+.env
+.env.local
