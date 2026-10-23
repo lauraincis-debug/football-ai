@@ -26,7 +26,7 @@ async function refresh(){
  $("status").textContent=s.arret_urgence?"ARRÊT D'URGENCE ACTIF":"Système actif · Simulation";
  $("status").className=s.arret_urgence?"bad":"good";
  $("risk-summary").innerHTML=`Perte du jour : <b class="${r.day_pnl<0?'bad':'good'}">$${r.day_pnl.toFixed(2)}</b><br>Perte semaine : <b class="${r.week_pnl<0?'bad':'good'}">$${r.week_pnl.toFixed(2)}</b><br>
-    Drawdown : ${(r.drawdown*100).toFixed(2)}% / ${(l.drawdown_max*100).toFixed(1)}%<br>Trades aujourd'hui : ${r.trades_today} / ${l.trades_max_jour}<br>Pertes consécutives : ${r.losses_in_row} / ${l.pertes_consecutives_max}<br>Arrêt d'urgence : ${s.arret_urgence?'ACTIF':'inactif'}`;
+    Drawdown : ${(r.drawdown*100).toFixed(2)}% / ${(l.drawdown_max*100).toFixed(1)}%<br>Trades aujourd'hui : ${r.trades_today} / ${l.trades_max_jour}<br>Pertes consécutives : ${r.losses_in_row} / ${l.pertes_consecutives_max}<br>Arrêt d'urgence : ${s.arret_urgence?'ACTIF':'inactif'}<br>Envois réels gelés : ${(s.gel_envois||[]).length? s.gel_envois.join(', ') : 'non (aucun envoi réel n\'est activé)'}`;
  renderTrades(s.transactions);
 }
 function renderTrades(trades){

@@ -15,6 +15,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 import pyotp
 from jose import jwt, JWTError
+import order_ledger
+from risk_engine import EtatRisque, Proposition, evaluer_nouveau_trade, risque_du_trade
 BASE = Path(__file__).resolve().parent
 DB_PATH = os.getenv("DATABASE_PATH", str(BASE / "carnet.db"))
 JWT_SECRET = os.getenv("JWT_SECRET", "")
@@ -65,6 +67,7 @@ def init_db():
           apply_at TEXT NOT NULL, payload TEXT NOT NULL
         );
         """)
+        c.executescript(order_ledger.SCHEMA)
         for k,v in DEFAULT_LIMITS.items():
             c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k,json.dumps(v)))
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('emergency_stop','false')")
@@ -173,6 +176,10 @@ class TradeIn(BaseModel):
         return self
 class CloseIn(BaseModel):
     exit_price: float = Field(gt=0)
+class ResolutionIn(BaseModel):
+    issue: Literal["filled","rejected"]
+    note: str = Field(default="", max_length=300)
+    confirmation: str
 @app.on_event("startup")
 def startup():
     # Fail closed: no app start without mandatory auth configuration.
@@ -213,9 +220,15 @@ def login(data: LoginIn, request: Request):
 @app.get("/api/etat", dependencies=[Depends(auth_required)])
 def state():
     rs = risk_state()
+    with db() as c:
+        gel = order_ledger.raisons_gel(c, bool(get_setting("emergency_stop")))
+        non_resolues = order_ledger.intentions_non_resolues(c)
+        rapport = order_ledger.dernier_rapport(c)
     return {"mode":"simulation","arret_urgence":get_setting("emergency_stop"),
             "capital":rs["capital"],"etat_risque":rs,"transactions":current_trades(),
-            "pending_limits":get_pending()}
+            "pending_limits":get_pending(),
+            "gel_envois":gel,"intentions_non_resolues":non_resolues,
+            "dernier_rapprochement":({"status":rapport["status"],"created_at":rapport["created_at"]} if rapport else None)}
 def get_pending():
     with db() as c:
         r=c.execute("SELECT * FROM pending_limits WHERE id=1").fetchone()
@@ -262,24 +275,22 @@ def reactivate(confirmation: dict):
 @app.post("/api/transactions", dependencies=[Depends(auth_required)])
 def open_trade(data: TradeIn):
     apply_pending_if_due()
-    if get_setting("emergency_stop"): raise HTTPException(423,"Arrêt d'urgence actif.")
-    rs=risk_state(); lim=rs["limits"]
-    if rs["trades_today"] >= lim["trades_max_jour"]: raise HTTPException(409,"Plafond de trades quotidiens atteint.")
-    if rs["losses_in_row"] >= lim["pertes_consecutives_max"]: raise HTTPException(409,"Plafond de pertes consécutives atteint.")
-    if rs["day_pnl"] <= -lim["capital_alloue"]*lim["perte_max_jour"]: raise HTTPException(409,"Limite de perte journalière atteinte.")
-    if rs["week_pnl"] <= -lim["capital_alloue"]*lim["perte_max_semaine"]: raise HTTPException(409,"Limitede perte hebdomadaire atteinte.")
-    if rs["drawdown"] >= lim["drawdown_max"]: raise HTTPException(409,"Drawdown maximal atteint.")
-    if data.side=="long" and data.stop>=data.entry: raise HTTPException(422,"Stop long invalide.")
-    risk=abs(data.entry-data.stop)*data.quantity
-    max_risk=rs["capital"]*lim["risque_par_trade"]
-    if risk > max_risk + 1e-9: raise HTTPException(409,f"Risque du trade ({risk:.2f}) supérieur au plafond ({max_risk:.2f}).")
-    exposure=data.entry*data.quantity
-    if rs["capital"] and exposure/rs["capital"] > lim["levier_max"]+1e-9:
-        raise HTTPException(409,"Levier/exposition supérieur à la limite.")
+    rs = risk_state()
+    etat = EtatRisque(
+        capital=rs["capital"], day_pnl=rs["day_pnl"], week_pnl=rs["week_pnl"],
+        drawdown=rs["drawdown"], losses_in_row=rs["losses_in_row"], trades_today=rs["trades_today"],
+        emergency_stop=bool(get_setting("emergency_stop")),
+    )
+    proposition = Proposition(instrument=data.instrument.upper(), side=data.side, entry=data.entry,
+                              stop=data.stop, quantity=data.quantity)
+    violations = evaluer_nouveau_trade(proposition, etat, rs["limits"])
+    if violations:
+        premiere = violations[0]
+        raise HTTPException(premiere.http_status, premiere.message)
+    risk = risque_du_trade(proposition)
     with db() as c:
         cur=c.execute("INSERT INTO trades(created_at,instrument,side,entry,stop,target,quantity,status,note) VALUES(?,?,?,?,?,?,?,'open',?)",
-          (utcnow(),data.instrument.upper(),data.side,data.entry,data.stop,data.target,data.quantity,data
-    .note))
+          (utcnow(),proposition.instrument,data.side,data.entry,data.stop,data.target,data.quantity,data.note))
         trade_id=cur.lastrowid; c.commit()
     log_event("paper_trade_opened", {"trade_id":trade_id,"risk":risk})
     return {"id":trade_id,"status":"open","risk_usd":round(risk,2),"mode":"simulation"}
@@ -298,6 +309,28 @@ def close_trade(trade_id: int, data: CloseIn):
 
     )
     return {"id":trade_id,"pnl":round(pnl,2),"r_multiple":round(r,3) if r is not None else None}
+@app.get("/api/intentions", dependencies=[Depends(auth_required)])
+def intentions():
+    with db() as c:
+        return order_ledger.lister_intentions(c)
+@app.post("/api/intentions/{client_order_id}/resoudre", dependencies=[Depends(auth_required)])
+def resolve_intention(client_order_id: str, data: ResolutionIn):
+    # Résolution manuelle uniquement, après contrôle chez le courtier. Aucun renvoi d'ordre n'est déclenché.
+    if data.confirmation != "RESOUDRE":
+        raise HTTPException(400, "Tapez exactement RESOUDRE après contrôle chez le courtier.")
+    with db() as c:
+        try:
+            statut = order_ledger.resoudre_manuellement(c, client_order_id, data.issue, data.note)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except (order_ledger.InvalidTransitionError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+    log_event("intention_resolved_manually", {"client_order_id": client_order_id, "statut": statut})
+    return {"client_order_id": client_order_id, "statut": statut}
+@app.get("/api/rapprochements", dependencies=[Depends(auth_required)])
+def rapprochements():
+    with db() as c:
+        return order_ledger.lister_rapports(c)
 @app.get("/api/evenements", dependencies=[Depends(auth_required)])
 def events():
     with db() as c:
@@ -336,6 +369,8 @@ def live_order(payload: dict):
     # Safety gate: the generic CCXT adapter does not guarantee an exchange-native
     # protective stop linked to a filled entry. Never send a live order until a
     # platform-specific implementation and tests replace this guard.
+    # Point de contrôle futur : aucun envoi tant que order_ledger.raisons_gel(...) n'est pas vide
+    # et que le rapprochement courtier n'est pas validé. Le blocage 503 ci-dessous reste en vigueur.
     raise HTTPException(503, "Trading réel verrouillé : sélectionnez la plateforme et implémentez/testez son stop protecteur natif avant toute transmission.")
     from live_broker import place_limit_order
     try:

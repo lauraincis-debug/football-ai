@@ -65,6 +65,17 @@ CSV avec en-têtes `timestamp,open,high,low,close,volume` ; minimum 100 bougies,
 
 La stratégie SMA / ATR intégrée est un exemple de pipeline de validation, pas une stratégie recommandée. Aucun verdict « stratégie rentable » ne doit être produit automatiquement. Exiger des données provenant de sources vérifiables, des splits chronologiques répétés, du walk-forward, des frais réalistes, un test de sensibilité, du paper trading prolongé et une revue indépendante.
 
+## Moteur de risque, registre d'intentions et rapprochement
+
+Cette couche est le socle exigé avant tout déverrouillage. Elle est active dès maintenant, même si le trading réel reste bloqué.
+
+- **`risk_engine.py`** (fonction pure) : évalue une proposition de trade contre l'état de risque et les limites. Il renvoie toutes les violations, dans l'ordre de priorité (arrêt d'urgence en premier). `open_trade` s'appuie désormais sur ce moteur. Nouveau contrôle optionnel : liste blanche d'instruments.
+- **`order_ledger.py`** (persistant, SQLite) : registre des intentions d'ordre avec `client_order_id` unique (idempotence). Transitions d'état contrôlées. Un résultat ambigu passe en `ambiguous` et ne revient jamais automatiquement à un état final : seule une résolution manuelle (`POST /api/intentions/{id}/resoudre`, confirmation `RESOUDRE`) le clôt. Il n'y a aucun renvoi automatique d'ordre.
+- **`reconciliation.py`** (fonction pure) : compare l'état local (positions, ordres ouverts, intentions non résolues) et l'instantané du courtier. Tout écart donne un rapport en échec. Les écarts ne sont jamais corrigés automatiquement. Les rapports sont historisés (`GET /api/rapprochements`).
+- **Gel des envois** : `order_ledger.raisons_gel` renvoie les raisons qui interdisent tout envoi réel (arrêt d'urgence, intention non résolue, rapprochement absent ou en échec). La liste est visible dans `/api/etat` (`gel_envois`) et dans l'interface.
+
+Aucun adaptateur ne pilote encore la boucle de rapprochement avec un vrai courtier : c'est l'étape suivante, à faire sur démo ou testnet. L'endpoint `/api/live/order` reste en 503.
+
 ## Tests
 
 ```bash

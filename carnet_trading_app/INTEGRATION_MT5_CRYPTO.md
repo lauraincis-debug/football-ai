@@ -42,6 +42,10 @@ L'endpoint `/api/live/order` reste bloqué par HTTP 503. Les adaptateurs et test
 
 Avant déverrouillage : connecter le gestionnaire de risque à l'état courtier, imposer une liste d'instruments autorisés, gérer l'idempotence et les états d'ordre, vérifier les SL / TP après chaque fill, gérer les reconnexions et le kill switch, effectuer des tests démo / testnet prolongés et commander un audit indépendant.
 
+## 6 bis. Moteur de risque, registre et rapprochement
+
+Modules ajoutés : `risk_engine.py` (contrôles de risque purs), `order_ledger.py` (intentions persistantes, idempotence, transitions contrôlées, résolution manuelle, historique des rapprochements, raisons de gel) et `reconciliation.py` (comparaison pure état local / instantané courtier). Les envois restent gelés tant qu'une intention est ambiguë, qu'un arrêt d'urgence est actif, ou que le dernier rapprochement n'est pas réussi. Ces fonctions ne transmettent aucun ordre.
+
 ## 7. Tests et état
 
 Les tests automatiques locaux utilisent des faux courtiers et ne communiquent pas avec un serveur MT5 ni avec un testnet crypto. Dans l'environnement de génération, **13 tests des adaptateurs et du moteur de backtest ont passé**. Cela ne signifie pas que les tests complets de l'application passent : certaines dépendances n'étaient pas installées dans cet environnement. Installer `requirements.txt` puis lancer `PYTHONPATH=. pytest -q` dans un environnement propre.
