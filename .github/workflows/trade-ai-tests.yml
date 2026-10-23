@@ -1,0 +1,32 @@
+name: Trade AI tests
+
+on:
+  push:
+    paths:
+      - "trade AI/**"
+      - ".github/workflows/trade-ai-tests.yml"
+  pull_request:
+    paths:
+      - "trade AI/**"
+      - ".github/workflows/trade-ai-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "trade AI"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: "trade AI/requirements.txt"
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+      - name: Lancer les tests
+        run: pytest -q
