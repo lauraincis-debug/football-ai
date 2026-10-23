@@ -74,7 +74,10 @@ Cette couche est le socle exigé avant tout déverrouillage. Elle est active dè
 - **`reconciliation.py`** (fonction pure) : compare l'état local (positions, ordres ouverts, intentions non résolues) et l'instantané du courtier. Tout écart donne un rapport en échec. Les écarts ne sont jamais corrigés automatiquement. Les rapports sont historisés (`GET /api/rapprochements`).
 - **Gel des envois** : `order_ledger.raisons_gel` renvoie les raisons qui interdisent tout envoi réel (arrêt d'urgence, intention non résolue, rapprochement absent ou en échec). La liste est visible dans `/api/etat` (`gel_envois`) et dans l'interface.
 
-Aucun adaptateur ne pilote encore la boucle de rapprochement avec un vrai courtier : c'est l'étape suivante, à faire sur démo ou testnet. L'endpoint `/api/live/order` reste en 503.
+- **Rapprochement branché** (`reconciliation_runner.py`) : `POST /api/rapprochements/executer` (`{"venue": "mt5"|"crypto"}`) lit le courtier en **lecture seule**, compare aux positions issues des intentions exécutées et aux ordres ouverts, puis enregistre le rapport. Sans identifiants, sans module MT5 (hors Windows) ou si le courtier ne répond pas, le rapport est en échec : fail-closed. Un spot crypto ne peut pas vérifier de positions : toute position locale produit un écart.
+- **Limite connue** : une intention `submitted` reste « non résolue » même si l'ordre est bien ouvert chez le courtier. Le rapport reste donc en échec tant qu'elle n'est pas résolue manuellement. C'est volontairement conservateur : il n'existe pas encore d'état « ouvert » distinct.
+
+Les adaptateurs ont été testés avec des lectures simulées. Un test sur compte démo MT5 ou sur testnet crypto reste nécessaire avant toute confiance opérationnelle. L'endpoint `/api/live/order` reste en 503.
 
 ## Tests
 

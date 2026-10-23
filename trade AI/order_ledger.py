@@ -176,3 +176,28 @@ def raisons_gel(con, arret_urgence: bool) -> list[str]:
     elif rapport["status"] != "ok":
         raisons.append("rapprochement_en_echec")
     return raisons
+
+
+FILLED_STATES = (FILLED, RESOLVED_FILLED)
+
+
+def positions_depuis_intentions(con, venue: str) -> dict:
+    """Positions locales signées par symbole, calculées à partir des intentions exécutées (filled/resolved_filled)."""
+    marks = ",".join("?" * len(FILLED_STATES))
+    rows = con.execute(
+        f"SELECT symbol, side, quantity FROM order_intents WHERE venue=? AND status IN ({marks})",
+        (venue, *FILLED_STATES),
+    ).fetchall()
+    positions: dict[str, float] = {}
+    for r in rows:
+        signe = 1.0 if r["side"] == "buy" else -1.0
+        positions[r["symbol"]] = positions.get(r["symbol"], 0.0) + signe * float(r["quantity"])
+    return {s: q for s, q in positions.items() if abs(q) > 1e-12}
+
+
+def ordres_ouverts_locaux(con, venue: str) -> list[str]:
+    """Identifiants courtier des intentions envoyées et sans résultat final (statut submitted)."""
+    rows = con.execute(
+        "SELECT broker_order_id FROM order_intents WHERE venue=? AND status=? AND broker_order_id IS NOT NULL", (venue, SUBMITTED)
+    ).fetchall()
+    return [r["broker_order_id"] for r in rows]

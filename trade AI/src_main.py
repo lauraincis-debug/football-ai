@@ -16,6 +16,7 @@ from argon2.exceptions import VerifyMismatchError
 import pyotp
 from jose import jwt, JWTError
 import order_ledger
+import reconciliation_runner
 from risk_engine import EtatRisque, Proposition, evaluer_nouveau_trade, risque_du_trade
 BASE = Path(__file__).resolve().parent
 DB_PATH = os.getenv("DATABASE_PATH", str(BASE / "carnet.db"))
@@ -327,6 +328,18 @@ def resolve_intention(client_order_id: str, data: ResolutionIn):
             raise HTTPException(409, str(exc)) from exc
     log_event("intention_resolved_manually", {"client_order_id": client_order_id, "statut": statut})
     return {"client_order_id": client_order_id, "statut": statut}
+# Lecteur courtier injectable (tests). En production, lit le courtier réel ; sans identifiants, le rapport échoue.
+LECTEUR_COURTIER = reconciliation_runner.lire_courtier_par_defaut
+@app.post("/api/rapprochements/executer", dependencies=[Depends(auth_required)])
+def run_reconciliation(payload: dict):
+    venue = str(payload.get("venue", ""))
+    if venue not in reconciliation_runner.VENUES:
+        raise HTTPException(422, "venue doit être 'mt5' ou 'crypto'.")
+    with db() as c:
+        resultat = reconciliation_runner.executer(c, venue, LECTEUR_COURTIER)
+        order_ledger.enregistrer_rapport(c, resultat["ok"], resultat)
+    log_event("reconciliation_run", {"venue": venue, "ok": resultat["ok"], "ecarts": len(resultat["ecarts"])})
+    return resultat
 @app.get("/api/rapprochements", dependencies=[Depends(auth_required)])
 def rapprochements():
     with db() as c:
