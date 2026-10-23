@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<title>Carnet de trading</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/api/app.js" defer></script>
+</head>
+<body>
+<header>
+  <div><span class="eyebrow">JOURNAL DE MARCHÉ</span><h1>Carnet de trading</h1></div>
+  <span class="pill">SIMULATION UNIQUEMENT</span>
+</header>
+<main>
+<section id="login-panel" class="panel login">
+  <h2>Connexion sécurisée</h2>
+  <p>Mot de passe et code 2FA à six chiffres.</p>
+  <form id="login-form">
+    <label>Mot de passe<input id="password" type="password" autocomplete="current-password" required></label>
+    <label>Code 2FA<input id="totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></label>
+    <button>Se connecter</button>
+  </form>
+  <p id="login-error" role="alert"></p>
+</section>
+
+<section id="dashboard" hidden>
+  <div class="toolbar">
+    <p id="status" aria-live="polite">Chargement…</p>
+    <button id="logout" class="secondary">Déconnexion</button>
+  </div>
+  <div class="grid">
+    <article class="panel hero">
+      <span class="eyebrow">CAPITAL SIMULÉ</span>
+      <div id="capital" class="big">$500.00</div>
+      <p>Mode papier — aucun ordre réel</p>
+    </article>
+    <article class="panel"><h2>Budget de perte</h2><div id="risk-summary"></div></article>
+  </div>
+
+  <article class="panel">
+    <h2>Ouvrir un trade papier</h2>
+    <form id="trade-form" class="form-grid">
+      <label>Instrument<input id="instrument" value="BTCUSDT" maxlength="30" required></label>
+      <label>Sens
+        <select id="side"><option value="long">Long</option><option value="short">Short</option></select>
+      </label>
+      <label>Entrée<input id="entry" type="number" min="0.000001" step="any" required></label>
+      <label>Stop-loss<input id="stop" type="number" min="0.000001" step="any" required></label>
+      <label>Take-profit facultatif<input id="target" type="number" min="0.000001" step="any"></label>
+      <label>Quantité<input id="quantity" type="number" min="0.000001" step="any" required></label>
+      <label class="wide">Note<input id="note" maxlength="500"></label>
+      <button class="wide">Valider selon les limites</button>
+    </form>
+    <p id="trade-message" role="alert"></p>
+  </article>
+
+  <article class="panel">
+    <h2>Transactions</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Instrument</th><th>Sens</th><th>Entrée</th><th>Stop</th><th>Quantité</th><th>Statut</th><th>PnL</th><th>Action</th></tr>
+        </thead>
+        <tbody id="trades"></tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h2>Arrêt d'urgence</h2>
+    <p>Arrête les nouvelles ouvertures de trades. Tapez exactement le mot demandé.</p>
+    <div class="form-grid">
+      <label>Confirmation<input id="stop-confirm" placeholder="ARRETER"></label>
+      <button id="stop-button" class="danger">Activer l'arrêt</button>
+      <label>Confirmation réactivation<input id="resume-confirm" placeholder="REACTIVER"></label>
+      <button id="resume-button" class="secondary">Réactiver</button>
+    </div>
+    <p id="emergency-message" role="alert"></p>
+  </article>
+
+  <article class="panel">
+    <h2>Passage d'ordre réel — accès verrouillé</h2>
+    <p>Le connecteur CCXT est préparé, mais l'ordre réel ne doit être activé qu'après sélection de la plateforme, tests sandbox, mise en place d'un stop protecteur spécifique à la plateforme et revue de sécurité. Un ordre limite peut être exécuté sans stop associé : ne l'utilisez pas en production dans cet état.</p>
+    <form id="live-form" class="form-grid">
+      <label>Symbole CCXT<input id="live-symbol" placeholder="BTC/USDT" required></label>
+      <label>Sens
+        <select id="live-side"><option value="buy">Achat</option><option value="sell">Vente</option></select>
+      </label>
+      <label>Quantité<input id="live-amount" type="number" min="0.00000001" step="any" required></label>
+      <label>Prix limite<input id="live-price" type="number" min="0.00000001" step="any" required></label>
+      <label>Prix stop requis par contrôle<input id="live-stop" type="number" min="0.00000001" step="any" required></label>
+      <label class="wide">Confirmation exacte (uniquement après revue humaine)<input id="live-confirm" placeholder="I_ACCEPT_REAL_FINANCIAL_RISK" required></label>
+      <button class="wide danger" type="submit">Soumettre un ordre réel (verrouillé par configuration serveur)</button>
+    </form>
+    <p id="live-message" role="alert"></p>
+  </article>
+
+  <article class="panel">
+    <h2>Backtest historique avec validations</h2>
+    <p>CSV requis : timestamp, open, high, low, close, volume. Minimum 100 bougies chronologiques, sans doublons ni trous anormaux. Le rapport sépare train, validation, test hors échantillon et robustesse de paramètres. Vérifiez les hypothèses de coûts et les limites du modèle.</p>
+    <label>Fichier CSV<input id="csv" type="file" accept=".csv,text/csv"></label>
+    <button id="run-backtest">Lancer le backtest</button>
+    <pre id="backtest-result" aria-live="polite"></pre>
+  </article>
+</section>
+</main>
+<footer>Version MVP · Testez d'abord sur des données historiques · Aucun conseil financier</footer>
+</body>
+</html>
