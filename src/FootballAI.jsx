@@ -1351,6 +1351,9 @@ export default function FootballAI() {
             </div>
 
             <div className="fai-header-kpis">
+              <a className="fai-btn-secondary" href="/sanwigo-index.html" title="Ouvrir SanwiGo — VTC &amp; livraison à Aboisso">
+                👑 SanwiGo Aboisso 🚖
+              </a>
               {installPromptEvent && (
                 <button
                   type="button"

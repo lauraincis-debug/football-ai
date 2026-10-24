@@ -45,3 +45,21 @@ npm run test:model   # Lancer les tests mathématiques & le benchmark v3
 npm run build        # Recompiler la production vers ./www
 npm run deploy       # Déployer sur Firebase Hosting
 ```
+
+---
+
+## 👑 SanwiGo — VTC & livraison à Aboisso (app autonome du même dépôt)
+
+Reconstruction « clean-room » des fonctions d'un grand VTC (type Yango), **améliorée**
+(commission 10-12 % au lieu de 18-23 %, prix fixe détaillé plafonné, repères locaux,
+dès 300 FCFA) et adaptée à **Aboisso / Sud-Comoé** : voitures pour les passagers
+(Partagé, Éco, Confort, Confort+, Sanwi Royal, Villages & Pistes), moto/tricycle/camion
+**en livraison uniquement**, inter-villes (Ayamé, Noé, Bonoua, Abidjan…), Wave/Orange
+Money/espèces, PIN de course, espaces **Client + Chauffeur Pro + Admin**.
+Analyse complète, failles corrigées et feuille de route : **[SANWIGO.md](SANWIGO.md)**.
+
+```bash
+npm run test:sanwigo    # 24 vérifications du moteur tarifaire & matching
+npm run dev:sanwigo     # Dev SanwiGo (port 5174)
+npm run build:sanwigo   # Production -> ./sanwigo-www (même patron que Cloé)
+```

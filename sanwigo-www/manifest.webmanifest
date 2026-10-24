@@ -1,0 +1,19 @@
+{
+  "name": "Football AI Ultra — Système Prédictif Adaptatif",
+  "short_name": "Football AI",
+  "description": "Prédictions football hybrides Elo + Poisson Dixon-Coles, Coupon combiné intelligent et détection de Value Bet.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#040510",
+  "theme_color": "#090b1e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

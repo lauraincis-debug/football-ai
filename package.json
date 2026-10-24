@@ -9,6 +9,9 @@
     "build": "vite build && vite build --config vite.cloe.config.js && vite build --config vite.cloe-app.config.js",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test:model": "node scripts/verify-model.mjs",
+    "dev:sanwigo": "vite --config vite.sanwigo.config.js --open /sanwigo-index.html",
+    "build:sanwigo": "vite build --config vite.sanwigo.config.js",
+    "test:sanwigo": "node scripts/verify-sanwigo.mjs",
     "deploy": "./deploy-firebase.sh"
   },
   "dependencies": {
