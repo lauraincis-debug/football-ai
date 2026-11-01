@@ -37,61 +37,45 @@ l'interface (Paramètres → mot de passe), puis supprimer le fichier.
 
 ### Service systemd (recommandé)
 
-```ini
-# /etc/systemd/system/carnet.service
-[Unit]
-Description=Carnet de Trading (simulation)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=carnet
-Group=carnet
-WorkingDirectory=/opt/carnet-de-trading
-Environment=CARNET_HOST=127.0.0.1
-Environment=CARNET_PORT=8080
-Environment=CARNET_ENV=SIMULATION
-# Secrets : fichier dédié, droits 600, jamais dans l'unité
-EnvironmentFile=/opt/carnet-de-trading/.env
-ExecStart=/opt/carnet-de-trading/scripts/run.sh
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=30
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/carnet-de-trading/data /opt/carnet-de-trading/var
-
-[Install]
-WantedBy=multi-user.target
-```
+Le kit complet est versionné dans `deploy/` : unité durcie
+`deploy/systemd/carnet.service`, configuration `deploy/carnet.env.example`,
+vhosts `deploy/nginx/carnet.conf` et `deploy/caddy/Caddyfile`, scripts
+`deploy/install.sh` / `deploy/uninstall.sh`, agent Windows
+`deploy/windows/install-agent.ps1`. Procédure détaillée :
+`docs/DEPLOYMENT.md`.
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now carnet
+sudo ./deploy/install.sh --domain carnet.exemple.fr --tls nginx --email ops@exemple.fr
 sudo systemctl status carnet --no-pager
+curl -fsS http://127.0.0.1:8080/api/health
 ```
 
-Terminer TLS par un reverse proxy (nginx/Caddy) sur `127.0.0.1:8080`, jamais
-exposer le port applicatif directement.
+Points d'exploitation : le service écoute sur `127.0.0.1:8080` (TLS terminé par
+le proxy), les données vivent dans `/var/lib/carnet`, la configuration dans
+`/etc/carnet/carnet.env` (0640), et `carnet-drill.timer` exécute un exercice de
+restauration chaque dimanche. Ne jamais exposer 8080 ni 8787 (agent MT5)
+directement sur Internet.
 
 ## 3. Configuration
 
-Toutes les variables sont documentées dans le `README.md` §5. Fichier `.env`
-exemple (droits 600) :
+Toutes les variables sont documentées dans le `README.md` §5. Le fichier
+`/etc/carnet/carnet.env` est créé depuis `deploy/carnet.env.example` (0640
+`root:carnet`) ; il ne doit jamais être versionné une fois rempli.
 
 ```ini
 CARNET_HOST=127.0.0.1
 CARNET_PORT=8080
 CARNET_ENV=SIMULATION
-CARNET_SEED=20261101
-CARNET_SIM_SPEED=300
+CARNET_SIM_SPEED=60
 CARNET_TICK_SECONDS=1.0
-CARNET_ADMIN_PASSWORD=...
-CARNET_OWNER_TOKEN=...            # décisions réservées
+CARNET_DATA_DIR=/var/lib/carnet/data
+CARNET_VAR_DIR=/var/lib/carnet/var
+CARNET_BACKUP_DIR=/var/lib/carnet/backups
+CARNET_ALLOW_REAL=0               # laisser à 0 : réel interdit par construction
+CARNET_ADMIN_PASSWORD=            # vide ⇒ mot de passe aléatoire écrit en 0600
+CARNET_OWNER_TOKEN=...            # décisions réservées (var/owner_token possible)
 CARNET_BACKUP_PASSPHRASE=...      # chiffrement des sauvegardes
-CARNET_WEBHOOK_URL=               # alertes sortantes
+CARNET_WEBHOOK_URL=               # amorçage du canal d'alerte
 ```
 
 Après modification : `sudo systemctl restart carnet`, puis vérifier `/api/health`.
@@ -119,6 +103,53 @@ curl -s localhost:8080/api/health | python3 -m json.tool
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/diagnostics \
   | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["app"], d["reconciliations"][:1])'
 ```
+
+## 4 bis. Pont MT5 démo
+
+Le pont est désactivé par défaut. Cycle de vie :
+
+1. **Nœud Windows** : terminal MT5 connecté à un compte **démo**, agent installé
+   (`deploy/windows/install-agent.ps1`), tâche `CarnetMt5Agent` en cours.
+2. **Lien** : tunnel SSH (`systemctl status carnet-mt5-tunnel`) ou URL TLS privée.
+   Vérifier depuis le VPS : `curl -H "X-Bridge-Token: …" http://127.0.0.1:8787/health`.
+3. **Interface** : Paramètres → Connexion MetaTrader 5 (démo) → *Tester* puis
+   *Enregistrer* ; `Activer le pont` reste décoché tant que le test n'est pas vert.
+4. **Redémarrage** : `systemctl restart carnet` ; le moteur charge le pont et
+   journalise `MT5_BRIDGE_CONNECTED` (compte, devise, état des ordres).
+5. **Ordres démo** : cocher « Autoriser les ordres démo » uniquement après
+   validation explicite ; le bracket reste obligatoire.
+
+Diagnostic :
+
+| Événement journal | Signification | Action |
+|---|---|---|
+| `MT5_BRIDGE_CONNECTED` | pont chargé, compte démo | — |
+| `CONNECTOR_CONNECT_FAILED` | agent muet, jeton refusé, terminal fermé | vérifier tunnel, jeton, terminal |
+| `MT5_BRIDGE_UNAVAILABLE` | entrées bloquées, pas de bascule silencieuse | rétablir le pont ou désactiver |
+| `MT5_BRIDGE_DOWN` | compte injoignable en cours de cycle | idem ; les entrées restent suspendues |
+| `MT5_ORDER_NOT_ENABLED` | ordre refusé faute d'activation | cocher l'option, redémarrer |
+| `MT5_QUOTES_MISSING` | aucune cotation reçue | vérifier symboles/suffixe |
+| `REAL_TRADING_FORBIDDEN` | compte réel connecté au terminal | reconnecter en démo |
+
+Retour à la simulation : *Désactiver le pont* (désarme les ordres), puis
+`systemctl restart carnet`. Aucune donnée de la base n'est affectée.
+
+## 4 ter. Canal d'alerte
+
+Configuration : Paramètres → Canal d'alerte (URL Slack/Discord/Teams/générique,
+format, niveau minimum, activation). L'API correspondante est réservée à
+`connection:manage` et auditée.
+
+Routine :
+
+- après chaque changement, cliquer **Envoyer un test** et vérifier la réception ;
+- surveiller `failures` dans `GET /api/alerts` ; trois échecs consécutifs sur un
+  même événement sont tracés dans le journal applicatif ;
+- en cas de rotation d'URL : saisir la nouvelle URL, tester, enregistrer ;
+- pour couper les sorties : **Désactiver** (les alertes restent dans l'application).
+
+Le canal ne remplace pas la supervision : conservez une sonde externe sur
+`/api/health`.
 
 ## 5. Sauvegardes et restauration
 

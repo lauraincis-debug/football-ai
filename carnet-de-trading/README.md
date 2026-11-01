@@ -10,6 +10,12 @@ testés et bloquants par construction.
 - API HTTP JSON avec authentification par session, rôles et permissions.
 - Moteur de trading en boucle : marché simulé → stratégies → contrôles de risque →
   ordres → positions protégées → réconciliation → journal chaîné.
+- **Pont MetaTrader 5 démo** : agent Windows à jeton partagé, compte réel refusé,
+  ordres démo désactivés par défaut (bracket obligatoire).
+- **Canal d'alerte sortant** : Slack, Discord, Teams ou webhook générique, avec
+  réessais et URL masquée.
+- **Kit de déploiement VPS** : unité systemd durcie, reverse proxy TLS (nginx ou
+  Caddy), scripts d'installation/désinstallation, agent MT5 Windows.
 - Aucune dépendance tierce : **Python 3.10+ (stdlib seulement)**, HTML/CSS/JS natifs.
 
 ---
@@ -42,16 +48,18 @@ source d'exécution, rien ne dépend du poste de l'utilisateur).
 ## 2. Tests
 
 ```bash
-./scripts/test.sh                    # 222 tests, ~50 s
+./scripts/test.sh                    # 308 tests, ~75 s
 ./scripts/test.sh risk               # un seul module
 ```
 
-Couverture mesurée : 88 % global, 98 % sur le risque et les ordres (seuils du §21.3 : 80 % / 95 %).
+Couverture mesurée : 89 % global, 98 % sur le risque et les ordres (seuils du §21.3 : 80 % / 95 %).
 
 Couverture fonctionnelle : utilitaires, base, journal chaîné, sécurité, politique,
 garde-fous, marché, simulateur, risque (37 cas), ordres, connecteurs, réconciliation,
 moteur (redémarrage, suspension persistante, liquidation vérifiée), API HTTP
-(authentification, rôles, contrôles, sauvegardes), stratégies, backtests, sauvegardes.
+(authentification, rôles, contrôles, sauvegardes), stratégies, backtests, sauvegardes,
+pont MT5 démo (agent + connecteur + magasin + API), canal d'alerte, kit de
+déploiement et cohérence statique de l'interface.
 
 ## 3. Architecture
 
@@ -65,7 +73,9 @@ carnet-de-trading/
 │   ├── strategies.py        ema_trend, orb_breakout, rsi_reversion
 │   ├── risk.py              moteur de risque + état persistant des limites
 │   ├── orders.py            machine à états des ordres + positions
-│   ├── connectors/          simulation (actif), MT5, crypto spot, base commune
+│   ├── connectors/          simulation (actif), pont MT5 démo, crypto spot, base commune
+│   ├── alerts.py            canal d'alerte sortant (Slack/Discord/Teams/webhook)
+│   ├── connections.py       connexion MT5 : secrets locaux, test, masquage
 │   ├── reconcile.py         réconciliation local ↔ plateforme
 │   ├── guards.py            garde du mode réel + validations propriétaire
 │   ├── policy.py            politique de risque versionnée et chaînée
@@ -76,9 +86,10 @@ carnet-de-trading/
 │   ├── backup.py            sauvegardes vérifiées, chiffrées, exercices
 │   └── api.py               routeur, permissions, fichiers statiques, en-têtes
 ├── web/                     interface (aucune dépendance, hors ligne)
-├── tests/                   222 tests (stdlib unittest)
-├── scripts/                 run.sh, test.sh, backup.py, restore.sh
-└── docs/                    cahier des charges, décisions, blocages, opérations
+├── tests/                   308 tests (stdlib unittest)
+├── scripts/                 run.sh, test.sh, backup.py, restore.sh, mt5_agent.py
+├── deploy/                  systemd, nginx, Caddy, agent Windows, install.sh
+└── docs/                    cahier des charges, décisions, blocages, opérations, déploiement
 ```
 
 Flux d'un cycle (simulation) :
@@ -95,7 +106,7 @@ simulateur → cotations → chandelles/indicateurs → stratégies → signaux
 | Environnement | État | Condition |
 |---------------|------|-----------|
 | `SIMULATION`  | **actif** | défaut, aucun ordre réel possible |
-| `DEMO`        | prêt | identifiants courtier/exchange requis, ordres réels refusés |
+| `DEMO` (MT5)  | **prêt** | pont démo configuré dans l'interface ; compte réel refusé, ordres démo sur activation explicite |
 | `REAL_*`      | **bloqué** | §1.4 : jamais activable dans cette livraison |
 
 Le passage au réel exige : sélection du courtier/exchange (§26), validations
@@ -119,7 +130,7 @@ voir `docs/BLOCKERS.md`.
 | `CARNET_OWNER_TOKEN` | — | jeton propriétaire (décisions réservées) |
 | `CARNET_BACKUP_PASSPHRASE` | — | chiffrement des sauvegardes |
 | `CARNET_ADMIN_PASSWORD` etc. | aléatoire | mots de passe initiaux |
-| `CARNET_WEBHOOK_URL` | — | notifications sortantes |
+| `CARNET_WEBHOOK_URL` | — | amorçage du canal d'alerte (interface prioritaire) |
 | `CARNET_LOG_LEVEL` | `INFO` | verbosité |
 
 ## 6. Sécurité (résumé, §17)
@@ -150,20 +161,45 @@ voir `docs/BLOCKERS.md`.
 | `docs/DECISIONS.md` | décisions d'architecture et arbitrages |
 | `docs/BLOCKERS.md` | blocages réels, options, recommandation |
 | `docs/OPERATIONS.md` | exploitation VPS, incidents, sauvegardes, mises à jour |
+| `docs/DEPLOYMENT.md` | installation VPS (systemd, TLS, pont MT5, alertes) |
 | `docs/REPORT_SOURCES.md` | sources utilisées et vérifications |
+
+## 8 bis. Connexions MT5 démo et alertes
+
+**Pont MT5 démo.** Le VPS n'embarque pas la bibliothèque MetaTrader 5
+(Windows-only) : un agent (`scripts/mt5_agent.py`) tourne sur le nœud Windows,
+écoute sur la boucle locale et expose le terminal en JSON derrière un jeton
+partagé. Le moteur charge ce pont au démarrage si l'exploitant l'a activé
+(`Paramètres → Connexion MetaTrader 5 (démo)`), puis puise cotations, compte et
+positions dans le terminal. Garde-fous : `account_type: real` ⇒ connexion
+refusée (`REAL_TRADING_FORBIDDEN`), ordres démo désactivés par défaut
+(`MT5_ORDER_NOT_ENABLED`), bracket obligatoire, délai dépassé ⇒ statut inconnu
+sans renvoi. Le retour à la simulation se fait par désactivation + redémarrage,
+sans bascule silencieuse.
+
+**Alertes sortantes.** `GET/POST /api/alerts` configure une URL (Slack, Discord,
+Teams ou générique), un niveau minimum et l'activation. Trois tentatives avec
+repli exponentiel, résultat horodaté, URL et secrets masqués dans toutes les
+réponses, fichier `var/alerts.json` en 0600.
+
+**Déploiement.** `deploy/install.sh` installe le service systemd durci, crée
+`/etc/carnet/carnet.env`, prépare `/var/lib/carnet`, configure nginx ou Caddy en
+TLS et vérifie `/api/health`. Détails et procédures de retour arrière :
+`docs/DEPLOYMENT.md`.
 
 ## 9. Limites assumées de la V1
 
-- Aucun ordre réel, aucun courtier ni exchange sélectionné : voir blocages B1–B3.
-- MT5 : la bibliothèque officielle est Windows-only ; le connecteur est écrit et
-  testé avec un module factice, l'activation dépend du VPS Windows (§9).
+- Aucun ordre réel : le mode réel reste impossible par construction (B3).
+- MT5 : pont démo complet et testé (agent Windows + connecteur HTTP), mais aucun
+  compte démo réel n'a encore été raccordé — validation propriétaire requise (B1).
+- Exchange crypto : connecteur présent, aucun exchange sélectionné (B2).
 - L'interface est une application web autonome ; pas d'application mobile native
   (hors périmètre §3.3).
 - Les résultats de backtest ne constituent pas une promesse de performance (§22).
 
 ## 10. État de livraison
 
-- Tests : **222 / 222 OK** (≈50 s).
-- Couverture : **88 %** global, **98 %** risque et ordres.
+- Tests : **308 / 308 OK** (≈75 s).
+- Couverture : **89 %** global, **98 %** risque et ordres ; alertes 96 %, pont MT5 87 %.
 - Démarrage vérifié : API, interface, boucle moteur, réconciliation `OK`.
 - Environnement livré : `SIMULATION`, capital 10 000, 6 instruments, 3 stratégies.

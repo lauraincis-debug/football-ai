@@ -1,0 +1,31 @@
+# Reverse proxy TLS pour Carnet de Trading (Caddy ≥ 2.7).
+# Emplacement : /etc/caddy/Caddyfile
+# Caddy obtient et renouvelle automatiquement le certificat Let's Encrypt.
+#
+# Remplacez carnet.exemple.fr par votre domaine, puis :
+#   systemctl reload caddy
+
+carnet.exemple.fr {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	# Le service n'écoute que sur la boucle locale.
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Real-IP {remote_host}
+		health_uri /api/health
+		health_interval 30s
+	}
+
+	log {
+		output file /var/log/caddy/carnet.log
+		format json
+	}
+}

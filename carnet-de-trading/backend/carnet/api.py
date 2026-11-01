@@ -145,6 +145,15 @@ class ApiApplication:
         r.add("GET", "/api/validations", "state:read", self.validations_get)
         r.add("POST", "/api/validations", "owner:decide", self.validations_set)
 
+        r.add("GET", "/api/connections", "connection:manage", self.connections_get)
+        r.add("GET", "/api/connections/mt5", "connection:manage", self.mt5_get)
+        r.add("POST", "/api/connections/mt5", "connection:manage", self.mt5_set)
+        r.add("POST", "/api/connections/mt5/test", "connection:manage", self.mt5_test)
+        r.add("POST", "/api/connections/mt5/disable", "connection:manage", self.mt5_disable)
+        r.add("GET", "/api/alerts", "connection:manage", self.alerts_get)
+        r.add("POST", "/api/alerts", "connection:manage", self.alerts_set)
+        r.add("POST", "/api/alerts/test", "connection:manage", self.alerts_test)
+        r.add("POST", "/api/alerts/disable", "connection:manage", self.alerts_disable)
         r.add("GET", "/api/notifications", "state:read", self.notifications_list)
         r.add("POST", "/api/notifications/read", "state:read", self.notifications_read)
         r.add("GET", "/api/reconciliations", "diagnostics:read", self.reconciliations)
@@ -534,6 +543,117 @@ class ApiApplication:
             body.get("key") or "", bool(body.get("closed")), body.get("evidence") or "",
             session.user, body.get("note") or "")
         return 200, {"validation": result}
+
+    # ------------------------------------------------------------------
+    # Connexions aux plateformes (sections 9 et 26)
+    # ------------------------------------------------------------------
+    def connections_get(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        engine = self.engine
+        mt5 = engine.mt5.public()
+        return 200, {
+            "simulation": {
+                "available": True,
+                "active": not engine.uses_bridge,
+                "detail": "marché synthétique déterministe, exécution locale",
+            },
+            "mt5": {**mt5, "live": engine.uses_bridge,
+                    "connected": engine.connector.is_connected() if engine.uses_bridge else False,
+                    "restart_required": bool(mt5["enabled"]) != engine.uses_bridge},
+            "crypto": {
+                "available": False, "active": False,
+                "detail": "aucun exchange sélectionné : voir docs/BLOCKERS.md (B2)",
+            },
+            "notice": ("Le pont MT5 est actif : les cotations proviennent du terminal, "
+                       "les ordres ne partent que si l'option démo est cochée."
+                       if engine.uses_bridge else
+                       "Simulation active : aucun ordre ne peut quitter le serveur."),
+        }
+
+    def mt5_get(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        return 200, {"mt5": self.engine.mt5.public(),
+                     "active": self.engine.uses_bridge,
+                     "connected": (self.engine.connector.is_connected()
+                                   if self.engine.uses_bridge else False),
+                     "restart_required": bool(self.engine.mt5.config.get("enabled"))
+                     != self.engine.uses_bridge}
+
+    def mt5_set(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        try:
+            public = self.engine.mt5.configure(body, activate=body.get("enabled"))
+        except ValueError as exc:
+            raise ApiError(str(exc), 400, "MT5_CONFIG_INVALID") from exc
+        self.engine.audit.record(session.user.username, "mt5.configure",
+                                 {"enabled": public["enabled"], "broker": public["broker"],
+                                  "server": public["server"], "login": public["login"],
+                                  "orders": public["allow_demo_orders"]})
+        self.engine.journal.warning(
+            "security", "MT5_CONNECTION_CONFIGURED",
+            f"connexion MT5 {'activée' if public['enabled'] else 'configurée (inactive)'} — "
+            f"ordres démo {'autorisés' if public['allow_demo_orders'] else 'désactivés'}")
+        restart_required = bool(public["enabled"]) != self.engine.uses_bridge
+        return 200, {"mt5": public, "restart_required": restart_required,
+                     "message": ("Redémarrez le service pour appliquer la connexion."
+                                 if restart_required else
+                                 "Configuration enregistrée ; le pont actif est inchangé.")}
+
+    def mt5_test(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        if body.get("bridge_url"):
+            # Test à blanc des valeurs saisies, sans les enregistrer.
+            from .connections import Mt5ConnectionStore
+
+            probe = Mt5ConnectionStore(self.engine.settings.var_dir / "mt5_probe.json")
+            probe.config = {**probe.config, **{k: v for k, v in body.items()
+                                               if k in probe.config and v not in (None, "")}}
+            if body.get("bridge_token"):
+                probe.config["bridge_token"] = str(body["bridge_token"])
+            result = probe.test()
+            probe.path.unlink(missing_ok=True)
+        else:
+            result = self.engine.mt5.test()
+        self.engine.audit.record(session.user.username, "mt5.test",
+                                 {"ok": result.get("ok"), "code": result.get("code")})
+        return 200, {"result": result, "mt5": self.engine.mt5.public()}
+
+    def mt5_disable(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        public = self.engine.mt5.disable()
+        self.engine.audit.record(session.user.username, "mt5.disable", {})
+        self.engine.journal.warning("security", "MT5_CONNECTION_DISABLED",
+                                    "connexion MT5 désactivée par l'exploitant")
+        return 200, {"mt5": public, "active": self.engine.uses_bridge,
+                     "restart_required": self.engine.uses_bridge}
+
+    # ------------------------------------------------------------------
+    # Canaux d'alerte (section 19.2)
+    # ------------------------------------------------------------------
+    def alerts_get(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        return 200, {"alerts": self.engine.alerts.status(),
+                     "formats": list(("auto", "generic", "slack", "discord", "teams"))}
+
+    def alerts_set(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        try:
+            status = self.engine.alerts.configure(
+                url=body.get("url"), format=body.get("format"),
+                min_level=body.get("min_level"), enabled=body.get("enabled"))
+        except ValueError as exc:
+            raise ApiError(str(exc), 400, "ALERT_CONFIG_INVALID") from exc
+        self.engine.audit.record(session.user.username, "alerts.configure",
+                                 {"format": status["format"], "min_level": status["min_level"],
+                                  "enabled": status["enabled"], "url": status["url_masked"]})
+        self.engine.journal.warning(
+            "security", "ALERT_CHANNEL_CONFIGURED",
+            f"canal d'alerte {'activé' if status['enabled'] else 'désactivé'} "
+            f"({status['resolved_format']}, niveau ≥ {status['min_level']})")
+        return 200, {"alerts": status}
+
+    def alerts_test(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        result = self.engine.alerts.test()
+        self.engine.audit.record(session.user.username, "alerts.test", result)
+        return 200, {"result": result, "alerts": self.engine.alerts.status()}
+
+    def alerts_disable(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
+        status = self.engine.alerts.disable()
+        self.engine.audit.record(session.user.username, "alerts.disable", {})
+        return 200, {"alerts": status}
 
     def notifications_list(self, handler, params, session, body, query) -> tuple[int, dict[str, Any]]:
         return 200, {"notifications": self.engine.notifications.tail(50),

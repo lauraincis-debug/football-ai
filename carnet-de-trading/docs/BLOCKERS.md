@@ -7,25 +7,33 @@ vérifications externes. Chaque point suit le format : constat → impact → op
 
 ---
 
-## B1 — Aucun courtier MT5 sélectionné (ni identifiants)
+## B1 — Pont MT5 démo prêt, aucun compte démo raccordé
 
-**Constat** : §26 exige le courtier, le serveur, le compte démo et le mot de passe
-investisseur. Aucun n'a été fourni. De plus, le paquet officiel `MetaTrader5`
-n'existe que pour Windows (et, en pratique, uniquement en architecture x64) ; il
-est absent de l'environnement Linux de développement.
-**Impact** : le connecteur est écrit, testé contre un module factice (95 % de
-couverture) et refuse tout ordre (`MT5_ORDER_NOT_ENABLED`). Flux réel, exécution
-réelle et vérification des protections côté courtier restent non validés.
+**Constat** : §26 exige le courtier, le serveur, le compte démo et le jeton du
+pont. Aucun n'a été fourni. Le paquet officiel `MetaTrader5` n'existe que pour
+Windows : l'intégration passe désormais par un agent dédié
+(`scripts/mt5_agent.py`) que le VPS joint en HTTP + jeton (`X-Bridge-Token`),
+derrière un tunnel SSH ou un reverse proxy TLS.
+**État** : le pont est **implémenté et testé de bout en bout** — agent Windows
+(terminal factice), connecteur HTTP, magasin de connexion chiffré par permissions
+(`var/mt5_connection.json`, 0600), routes API et panneau d'interface.
+Garde-fous vérifiés par les tests : `account_type: real` ⇒
+`REAL_TRADING_FORBIDDEN` ; ordres refusés tant que l'option démo n'est pas cochée
+(`MT5_ORDER_NOT_ENABLED`) ; bracket obligatoire ; délai dépassé ⇒ statut inconnu,
+jamais de renvoi ; jeton absent ou invalide ⇒ `MT5_BRIDGE_UNAUTHORIZED`.
+**Impact restant** : aucun flux réel de courtier n'a encore été observé — latence,
+qualité de remplissage, arrondis, suffixes d'instruments, comportement des
+protections côté courtier (stop/objectif) restent à valider sur un compte démo.
 **Options**
-1. VPS Windows Server + terminal MT5 + paquet officiel — conforme au §9, coût
-   licence Windows, maintenance plus lourde.
-2. Passerelle externe (bridge REST maison ou fournisseur) — resterait à auditer,
-   ajoute une dépendance tierce et un point de défaillance.
-3. Courtier proposant une API REST native — simplifierait l'intégration mais
-   changerait le choix de courtier du propriétaire.
-**Recommandation** : option 1 (VPS Windows dédié, compte démo d'abord, 4 semaines
-d'observation), car c'est la seule voie qui respecte §9 sans intermédiaire
-supplémentaire. Décision propriétaire requise sur le courtier.
+1. Nœud Windows dédié (ou VM Windows) + terminal MT5 + agent maison — conforme au
+   §9, aucune dépendance tierce, mais maintenance Windows à assurer.
+2. Passerelle fournisseur — ajouterait un intermédiaire à auditer et un point de
+   défaillance supplémentaire.
+3. Courtier à API REST native — simplifierait l'exploitation mais changerait le
+   choix de courtier du propriétaire.
+**Recommandation** : option 1 avec un compte démo, 4 semaines d'observation et un
+pont limité aux ordres démo. Procédure : `docs/DEPLOYMENT.md` §6. Décision
+propriétaire requise sur le courtier et le nœud Windows.
 
 ## B2 — Aucun exchange crypto sélectionné (ni clés API)
 
@@ -97,26 +105,35 @@ option 1 avant toute ouverture réelle.
 
 **Constat** : aucun binaire de navigateur n'est disponible ; il n'est donc pas
 possible d'exécuter un test end-to-end (Playwright) ici.
-**Impact** : l'interface est vérifiée par audit statique (164 identifiants HTML,
-134 références JS, 0 manquante ; 7 vues ↔ 7 entrées de navigation ↔ 7 rendus) et
-par les tests API, mais aucune capture automatisée de régression visuelle.
+**Impact** : l'interface est vérifiée par audit statique automatisé
+(`tests/test_web_ui.py` : 194 identifiants HTML, sélecteurs JS résolus sans
+manquant, 7 vues ↔ navigation, liaisons des panneaux MT5/alertes, routes du
+client présentes dans l'API, absence de gestionnaire inline) et par les tests API,
+mais aucune capture automatisée de régression visuelle.
 **Options**
 1. Ajouter Playwright sur le VPS (ou en CI GitHub Actions) et un test de fumée.
 2. Poursuivre l'audit statique + tests manuels guidés.
 **Recommandation** : option 1 dès la mise en place de la CI ; d'ici là, la checklist
 manuelle de `docs/OPERATIONS.md` §6 couvre les parcours critiques.
 
-## B8 — Notifications sortantes limitées au webhook générique
+## B8 — Canal d'alerte prêt, aucune destination fournie
 
-**Constat** : §19.2 impose des notifications ; le webhook est implémenté, mais aucun
-canal (e-mail, SMS, Telegram) n'a été fourni.
-**Impact** : les alertes restent visibles dans l'application et dans le webhook si
-configuré ; pas d'alerte hors application sans intégration.
+**Constat** : §19.2 impose des notifications hors application. Le canal est
+désormais implémenté (`backend/carnet/alerts.py`) avec quatre formats — Slack,
+Discord, Teams, webhook générique JSON — détection automatique depuis l'URL,
+niveau minimum configurable, trois tentatives avec repli exponentiel, compteurs
+d'envoi/échec et URL masquée dans toutes les réponses. L'interface permet de
+configurer, tester et désactiver le canal.
+**Impact restant** : aucune URL de webhook n'a été fournie ; le canal est donc
+« non configuré » et les alertes restent internes à l'application. Aucune
+notification e-mail/SMS n'est prévue.
 **Options**
-1. Webhook vers un service existant du propriétaire (Slack, Discord, n8n).
-2. Envoi SMTP direct (nécessite un serveur et des identifiants).
-**Recommandation** : option 1 immédiatement (aucun secret supplémentaire dans
-l'application), option 2 si le propriétaire fournit un relais SMTP.
+1. Webhook Slack/Teams du propriétaire (recommandé : zéro secret supplémentaire,
+   sortie d'alerte immédiate).
+2. Relais n8n/Zapier déjà en place chez le propriétaire.
+3. SMTP direct — exigerait un serveur et des identifiants, hors périmètre V1.
+**Recommandation** : option 1 ou 2 ; créer une URL dédiée au canal d'exploitation,
+la tester via `POST /api/alerts/test`, puis vérifier après chaque redémarrage.
 
 ---
 

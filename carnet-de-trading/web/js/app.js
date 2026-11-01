@@ -1103,6 +1103,180 @@ function levelColor(level) {
 }
 
 /* ------------------------------------------------------------------ settings */
+function renderConnections(state) {
+  const grid = $("#connections-grid");
+  const isAdmin = app.user?.role === "ADMIN";
+  if (grid) grid.classList.toggle("hidden", !isAdmin);
+  if (!isAdmin) return;
+
+  const mt5 = state.mt5_connection || {};
+  $("#mt5-badge").textContent = mt5.enabled ? "activée" : "non configurée";
+  if (!$("#mt5-url").matches(":focus")) $("#mt5-url").value = mt5.bridge_url || "";
+  $("#mt5-broker").value = mt5.broker || "";
+  $("#mt5-server").value = mt5.server || "";
+  $("#mt5-login").value = mt5.login || "";
+  $("#mt5-suffix").value = mt5.symbol_suffix || "";
+  $("#mt5-enabled").checked = Boolean(mt5.enabled);
+  $("#mt5-orders").checked = Boolean(mt5.allow_demo_orders);
+  const live = (state.connectors || []).find((entry) => entry && entry.kind === "mt5");
+  const last = mt5.last_test;
+  const bits = [
+    mt5.has_token ? "jeton enregistré" : "jeton absent",
+    mt5.bridge_url_masked ? `pont ${mt5.bridge_url_masked}` : "pont non configuré",
+    live ? "pont chargé par le moteur" : "moteur en simulation",
+    mt5.orders_notice,
+  ];
+  if (last) {
+    bits.push(`dernier test ${last.ok ? "réussi" : "échoué"} ${timeAgo(last.at)}`
+      + (last.detail ? ` — ${last.detail}` : ""));
+  }
+  $("#mt5-status").textContent = bits.join(" · ");
+
+  const alerts = state.alerts || {};
+  $("#alerts-badge").textContent = alerts.enabled
+    ? `actif (${alerts.resolved_format || "auto"})`
+    : (alerts.configured ? "configuré, désactivé" : "non configuré");
+  if (!$("#alert-url").matches(":focus")) $("#alert-url").value = alerts.url_masked || "";
+  $("#alert-format").value = alerts.format || "auto";
+  $("#alert-level").value = alerts.min_level || "WARNING";
+  $("#alert-enabled").checked = Boolean(alerts.enabled);
+  const alertBits = [
+    alerts.url_masked ? `cible ${alerts.url_masked}` : "aucune cible",
+    `format ${alerts.resolved_format || alerts.format || "auto"}`,
+    `niveau ≥ ${alerts.min_level || "WARNING"}`,
+    `${alerts.sent || 0} envoyée(s)`,
+    `${alerts.failures || 0} échec(s)`,
+  ];
+  if (alerts.last_result) {
+    alertBits.push(`dernier envoi ${alerts.last_result.ok ? "réussi" : "échoué"} `
+      + `${timeAgo(alerts.last_result.at)}`);
+  }
+  $("#alerts-status").textContent = alertBits.join(" · ");
+}
+
+async function onSaveMt5(event) {
+  event.preventDefault();
+  const error = $("#mt5-error");
+  error.textContent = "";
+  const payload = {
+    bridge_url: $("#mt5-url").value.trim(),
+    bridge_token: $("#mt5-token").value.trim(),
+    broker: $("#mt5-broker").value.trim(),
+    server: $("#mt5-server").value.trim(),
+    login: $("#mt5-login").value.trim(),
+    symbol_suffix: $("#mt5-suffix").value.trim(),
+    enabled: $("#mt5-enabled").checked,
+    allow_demo_orders: $("#mt5-orders").checked,
+  };
+  if (!payload.bridge_token) delete payload.bridge_token;
+  try {
+    const result = await api.saveMt5(payload);
+    $("#mt5-token").value = "";
+    toast("Connexion MT5 enregistrée", result.message || "", "ok");
+    await refreshState();
+  } catch (err) {
+    error.textContent = err.message;
+    toast("Enregistrement refusé", err.message, "bad");
+  }
+}
+
+async function onTestMt5() {
+  const error = $("#mt5-error");
+  error.textContent = "";
+  const payload = {};
+  if ($("#mt5-url").value.trim()) payload.bridge_url = $("#mt5-url").value.trim();
+  if ($("#mt5-token").value.trim()) payload.bridge_token = $("#mt5-token").value.trim();
+  if ($("#mt5-suffix").value.trim()) payload.symbol_suffix = $("#mt5-suffix").value.trim();
+  try {
+    const { result } = await api.testMt5(payload);
+    if (result.ok) {
+      toast("Pont MT5 joignable",
+        `compte ${result.account?.account_id || "—"} · ${result.quotes_received} cotation(s) · `
+        + `${result.orders_enabled ? "ordres démo actifs" : "ordres désactivés"}`, "ok");
+    } else {
+      toast("Test MT5 échoué", `${result.code || ""} ${result.detail || ""}`.trim(), "bad");
+    }
+    await refreshState();
+  } catch (err) {
+    error.textContent = err.message;
+    toast("Test impossible", err.message, "bad");
+  }
+}
+
+async function onDisableMt5() {
+  const confirmed = await confirmAction({
+    title: "Désactiver le pont MT5",
+    text: "Les nouvelles entrées seront bloquées au prochain redémarrage ; la simulation "
+      + "reste disponible. Les ordres démo seront désarmés.",
+    confirmLabel: "Désactiver",
+  });
+  if (!confirmed) return;
+  try {
+    await api.disableMt5();
+    toast("Pont MT5 désactivé", "Redémarrez le service pour revenir à la simulation.", "ok");
+    await refreshState();
+  } catch (err) {
+    toast("Désactivation impossible", err.message, "bad");
+  }
+}
+
+async function onSaveAlerts(event) {
+  event.preventDefault();
+  const error = $("#alerts-error");
+  error.textContent = "";
+  const payload = {
+    format: $("#alert-format").value,
+    min_level: $("#alert-level").value,
+    enabled: $("#alert-enabled").checked,
+  };
+  const url = $("#alert-url").value.trim();
+  if (url) payload.url = url;
+  try {
+    const result = await api.saveAlerts(payload);
+    if (!result.alerts?.configured) throw new ApiError("Renseignez une URL de webhook.", 400);
+    toast("Canal d'alerte enregistré",
+      result.alerts.enabled ? "Les alertes critiques seront envoyées." : "Canal désactivé.", "ok");
+    await refreshState();
+  } catch (err) {
+    error.textContent = err.message;
+    toast("Enregistrement refusé", err.message, "bad");
+  }
+}
+
+async function onTestAlerts() {
+  const error = $("#alerts-error");
+  error.textContent = "";
+  try {
+    const { result } = await api.testAlerts();
+    if (result.ok) {
+      toast("Alerte de test envoyée", `HTTP ${result.status} en ${result.attempts} tentative(s).`, "ok");
+    } else {
+      toast("Envoi impossible", result.error || "Vérifiez l'URL du webhook.", "bad");
+    }
+    await refreshState();
+  } catch (err) {
+    error.textContent = err.message;
+    toast("Test impossible", err.message, "bad");
+  }
+}
+
+async function onDisableAlerts() {
+  const confirmed = await confirmAction({
+    title: "Désactiver le canal d'alerte",
+    text: "Plus aucune notification ne sera envoyée à l'extérieur. Les alertes restent "
+      + "visibles dans l'application.",
+    confirmLabel: "Désactiver",
+  });
+  if (!confirmed) return;
+  try {
+    await api.disableAlerts();
+    toast("Canal d'alerte désactivé", "", "ok");
+    await refreshState();
+  } catch (err) {
+    toast("Désactivation impossible", err.message, "bad");
+  }
+}
+
 async function renderSettings() {
   const state = app.state;
   $("#settings-role").textContent = app.user?.role || "—";
@@ -1150,26 +1324,36 @@ async function renderSettings() {
   }
 
   const connectors = state.connectors || [];
+  const descriptor = connectors.find((entry) => entry && entry.kind) || {};
+  const mt5Config = state.mt5_connection || {};
+  const bridgeActive = descriptor.kind === "mt5";
+  const bridgeOnline = bridgeActive && descriptor.connected !== false;
   const platforms = [
     {
-      name: "MetaTrader 5 (Forex)",
-      status: connectors.find((c) => c.kind === "mt5") ? "connecteur présent" : "non sélectionné",
-      detail: "Courtier à choisir après comparaison ; démo MT5 obligatoire avant tout ordre. "
-        + "La bibliothèque officielle est limitée à Windows : nœud dédié isolé (section 9).",
-      ok: false,
+      name: "MetaTrader 5 (démo) — pont",
+      status: bridgeActive
+        ? (bridgeOnline ? "pont actif" : "pont hors ligne")
+        : (mt5Config.enabled ? "configuré — redémarrage requis" : "non configuré"),
+      detail: bridgeActive
+        ? `Cotations du terminal ${escapeHtml(descriptor.name || "MT5")} ; `
+          + `${mt5Config.allow_demo_orders ? "ordres démo autorisés (bracket obligatoire)" : "ordres désactivés"}. `
+          + "Aucun compte réel n'est accepté."
+        : "Terminal MT5 démo sur nœud Windows isolé, joint par l'agent à jeton partagé "
+          + "(section 9). Le passage d'ordre reste désactivé tant qu'il n'est pas coché.",
+      ok: bridgeOnline,
     },
     {
       name: "Exchange crypto Spot",
-      status: connectors.find((c) => c.kind === "crypto") ? "connecteur présent" : "non sélectionné",
+      status: "non sélectionné",
       detail: "API officielle, clés à permissions limitées, retraits désactivés, Spot uniquement (section 10).",
       ok: false,
     },
     {
       name: "Simulation interne",
-      status: "actif",
+      status: bridgeActive ? "en veille (pont actif)" : "actif",
       detail: "Marché synthétique déterministe, exécution et protections hébergées reproduites "
         + "fidèlement. Aucun ordre ne quitte le serveur.",
-      ok: true,
+      ok: !bridgeActive,
     },
   ];
   $("#platforms").innerHTML = platforms
@@ -1182,6 +1366,8 @@ async function renderSettings() {
       </div>`
     )
     .join("");
+
+  renderConnections(state);
 
   const usersCard = $("#users-card");
   if (app.user?.role !== "ADMIN") {
@@ -1431,6 +1617,12 @@ function bindEvents() {
   $("#btn-mfa-setup").addEventListener("click", onMfaSetup);
   $("#btn-mfa-enable").addEventListener("click", onMfaEnable);
   $("#user-form").addEventListener("submit", onCreateUser);
+  $("#mt5-form").addEventListener("submit", onSaveMt5);
+  $("#btn-mt5-test").addEventListener("click", onTestMt5);
+  $("#btn-mt5-disable").addEventListener("click", onDisableMt5);
+  $("#alerts-form").addEventListener("submit", onSaveAlerts);
+  $("#btn-alert-test").addEventListener("click", onTestAlerts);
+  $("#btn-alert-disable").addEventListener("click", onDisableAlerts);
   $("#journal-level").addEventListener("change", (event) => {
     app.journal.level = event.target.value;
     refreshJournal().catch(() => {});

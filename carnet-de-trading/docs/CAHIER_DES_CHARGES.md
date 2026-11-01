@@ -95,19 +95,30 @@ Diagramme et arborescence : `README.md` §3.
 - Un seul processus sert API + interface + moteur ; aucun calcul côté poste client.
 - Boucle moteur indépendante, erreurs capturées et journalisées sans arrêter le service.
 - Sauvegardes périodiques (6 h) + exercice de restauration automatique.
-- `scripts/run.sh` (systemd-compatible), `docs/OPERATIONS.md` (procédures).
+- Kit de déploiement versionné : unité systemd durcie (`deploy/systemd/carnet.service`),
+  vhosts TLS nginx/Caddy, `deploy/install.sh` idempotent, `uninstall.sh`,
+  timer hebdomadaire d'exercice de restauration.
+- `scripts/run.sh` (usage local), `docs/DEPLOYMENT.md` et `docs/OPERATIONS.md` (procédures).
 - Continuité (§8.1) : redémarrage → réconciliation obligatoire avant reprise
   (`test_connector_state_survives_restart`, `test_suspension_survives_restart`).
 
 ## §9 Connexion MT5
 
-- Connecteur complet (compte, positions, ordres, historique, permissions).
-- Refus explicites : identifiants absents, bibliothèque absente, compte réel sans
-  autorisation, passage d'ordre non activé avant sélection du courtier.
-- Testé avec un module factice (`test_platforms.py::Mt5PlatformTests`) — 95 % de
-  couverture sur `connectors/mt5.py`.
-- **BLOQUÉ B1** : aucun courtier/identifiants fournis ; bibliothèque officielle
-  limitée à Windows.
+- **Pont démo opérationnel** : agent Windows (`scripts/mt5_agent.py`) exposant
+  compte, positions, ordres, historique, cotations et envoi d'ordres, derrière un
+  jeton partagé (`X-Bridge-Token`) et une écoute limitée à la boucle locale.
+- Connecteur `connectors/mt5_bridge.py` chargé au démarrage si l'exploitant active
+  le pont ; magasin `connections.py` (secrets 0600, URL masquée, test à blanc) ;
+  routes `/api/connections/mt5{,/test,/disable}` et panneau d'interface.
+- Refus explicites testés : compte réel (`REAL_TRADING_FORBIDDEN`), ordre sans
+  bracket, ordres démo non activés (`MT5_ORDER_NOT_ENABLED`), jeton invalide,
+  terminal déconnecté, délai dépassé ⇒ statut inconnu sans renvoi.
+- Aucune bascule silencieuse : pont demandé mais indisponible ⇒ entrées bloquées
+  et journal critique.
+- Preuves : `tests/test_mt5.py` (agent + connecteur + magasin + API + moteur),
+  `tests/test_alerts.py` pour le canal associé.
+- **RESTE À VALIDER (B1)** : aucun compte démo réel n'a été raccordé — latence,
+  remplissage et suffixes d'instruments à observer avant activation des ordres.
 
 ## §10 Connexion crypto spot
 
@@ -234,7 +245,8 @@ Preuves : `test_core.py::SecurityTests` (hachage, TOTP, sessions, rôles, rate l
 |---|---|---|
 | Deux commandes distinctes : arrêt trading / liquidation | `POST /api/control/stop` (entrées bloquées, protections conservées) et `POST /api/control/liquidate` (ferme **et vérifie**) | `test_stop_trading_blocks_entries_and_resume_restores`, `test_liquidation_closes_and_reconciles`, `test_control_endpoints` |
 | Kill switch | `POST /api/control/kill-switch`, libération réservée à ADMIN + réconciliation | `test_kill_switch_blocks_resume_until_released` |
-| Notifications obligatoires | `notifications` + webhook optionnel pour : timeout, divergence, journal compromis, limite atteinte, liquidation non confirmée, protection absente | `test_unprotected_position_raises_one_alert`, `test_notifications_flow` |
+| Notifications obligatoires | `notifications` + canal d'alerte (`alerts.py`) pour : timeout, divergence, journal compromis, limite atteinte, liquidation non confirmée, protection absente | `test_unprotected_position_raises_one_alert`, `test_notifications_flow` |
+| Canal externe (Slack/Discord/Teams/webhook) | formats adaptés, niveau minimum, 3 réessais avec repli exponentiel, URL masquée, API `/api/alerts{,/test,/disable}` | `tests/test_alerts.py` (20 cas, transport factice) |
 
 ## §20 Base de données, journaux, sauvegardes
 
@@ -252,7 +264,7 @@ Preuves : `test_core.py::SecurityTests` (hachage, TOTP, sessions, rôles, rate l
 
 | Seuil §21.3 | Exigé | Mesuré |
 |---|---|---|
-| Couverture globale | ≥ 80 % | **88 %** (4 720 instructions, 555 non couvertes) |
+| Couverture globale | ≥ 80 % | **89 %** (5 314 instructions, 575 non couvertes) |
 | Couverture risque + ordres | ≥ 95 % | **98 %** risque, **98 %** ordres |
 | Scénarios critiques | 100 % | 100 % (voir tableau ci-dessous) |
 | Ordres dupliqués en test | 0 | 0 (`test_duplicate_client_order_is_not_executed_twice`) |
@@ -325,17 +337,19 @@ explicitement bloquantes.
 
 ## §26 Paramètres à fournir par le propriétaire
 
-Listés dans `BLOCKERS.md` §« Paramètres attendus » : courtier MT5 (serveur, compte,
-mot de passe investisseur), exchange crypto (nom, clés API sans retrait), pays de
-résidence, taille de compte, tolérance au risque, jeton propriétaire, phrase de
-passe de sauvegarde, adresse VPS et nom de domaine.
+Listés dans `BLOCKERS.md` §« Paramètres attendus » : courtier MT5 (serveur, compte
+démo, login), jeton du pont MT5 et adresse du nœud Windows, exchange crypto (nom,
+clés API sans retrait), pays de résidence, taille de compte, tolérance au risque,
+jeton propriétaire, phrase de passe de sauvegarde, adresse VPS, nom de domaine,
+URL du webhook d'alerte.
 
 ## §27 Ajouts de cette version
 
 Traités comme des exigences de premier rang :
 persistance de l'état du connecteur simulé, réconciliation avant reprise,
 versionnement de la politique, confirmation renforcée des actions destructrices,
-couverture de tests mesurée, documentation de traçabilité (ce document).
+couverture de tests mesurée, documentation de traçabilité (ce document),
+pont MT5 démo et canal d'alerte externe, kit de déploiement systemd/TLS.
 
 ---
 
@@ -345,4 +359,5 @@ couverture de tests mesurée, documentation de traçabilité (ce document).
 - Exigences dépendant d'un tiers : **6 blocages** documentés (`BLOCKERS.md`),
   chacun avec options et recommandation — aucun ne bloque l'usage de la V1 en
   simulation.
-- 222 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 88 %.
+- 308 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 89 %
+  (5 314 instructions, 575 non couvertes).

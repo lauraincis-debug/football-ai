@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import APP_NAME, __version__
+from .alerts import AlertNotifier
 from .backup import BackupManager
 from .config import (
     DEFAULT_POLICY,
@@ -33,12 +34,13 @@ from .config import (
     Settings,
     default_settings,
 )
+from .connections import Mt5ConnectionStore
 from .connectors.base import BrokerConnector, ConnectorError
 from .connectors.simulation import SimulationConnector
 from .db import Database, ensure_permissions
 from .guards import RealModeGuard
 from .journal import AuditLog, Journal, Notifications
-from .market import CandleSeries, MarketDataStore, to_float_map
+from .market import CandleSeries, MarketDataStore, Quote, to_float_map
 from .orders import OrderManager
 from .policy import PolicyStore
 from .reconcile import Reconciler
@@ -64,7 +66,7 @@ from .security import (
 )
 from .simulator import MarketSimulator, SimulationClock, is_market_open
 from .strategies import Signal, StrategyRegistry, STRATEGY_CLASSES
-from .util import D, ZERO, iso, new_uuid, now_utc, parse_iso, scrub_mapping
+from .util import D, ZERO, iso, new_uuid, now_utc, parse_iso, scrub_mapping, to_utc
 
 
 class EngineError(Exception):
@@ -81,6 +83,7 @@ class TradingEngine:
         self.journal = Journal(self.db)
         self.audit = AuditLog(self.db)
         self.notifications = Notifications(self.db, self.journal)
+        self.alerts = AlertNotifier(self.settings.var_dir / "alerts.json", self.journal)
         self.owner_gate = OwnerGate(self.settings.var_dir)
         self.guard = RealModeGuard(self.db, self.journal, self.audit, self.owner_gate,
                                    allow_real_setting=self.settings.allow_real_trading)
@@ -91,9 +94,10 @@ class TradingEngine:
         self.market = MarketDataStore(self.settings.symbols)
         self.simulator = MarketSimulator(self.settings.seed, self.settings.symbols)
         self.clock = SimulationClock(self.settings.simulation_speed)
-        self.connector: BrokerConnector = SimulationConnector(
-            self.settings.initial_capital, self.settings.account_currency, self.settings.seed,
-            state_path=self.settings.var_dir / "simulation_state.json")
+        # Choix du connecteur au démarrage : pont MT5 démo si l'exploitant l'a
+        # activé, sinon simulation interne. Aucune bascule silencieuse.
+        self.mt5 = Mt5ConnectionStore(self.settings.var_dir / "mt5_connection.json")
+        self.connector: BrokerConnector = self._build_connector()
         self.orders = OrderManager(self.db, self.connector, self.journal, self.notifications)
         self.risk = RiskEngine(self.policy_store.current())
         self.risk_states = RiskStateStore(self.db, self.risk.policy)
@@ -121,6 +125,78 @@ class TradingEngine:
     # ------------------------------------------------------------------
     # Démarrage
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Connecteur et flux de marché
+    # ------------------------------------------------------------------
+    def _build_connector(self) -> BrokerConnector:
+        if self.mt5.config.get("enabled") and self.mt5.config.get("bridge_url"):
+            return self.mt5.build_connector()
+        return SimulationConnector(
+            self.settings.initial_capital, self.settings.account_currency, self.settings.seed,
+            state_path=self.settings.var_dir / "simulation_state.json")
+
+    @property
+    def uses_bridge(self) -> bool:
+        return getattr(self.connector, "kind", "simulation") == "mt5"
+
+    def _collect_quotes(self, moment) -> list[Quote]:
+        """Cotations du cycle : pont MT5 (démo) ou marché simulé, jamais un mélange."""
+        if not self.uses_bridge:
+            return self.simulator.tick_all(moment)
+        try:
+            rows = self.connector.quotes(self.settings.symbols)  # type: ignore[attr-defined]
+        except ConnectorError as exc:
+            self.journal.error("market", "BRIDGE_QUOTES_FAILED",
+                               f"cotations MT5 indisponibles : {exc}")
+            return []
+        quotes: list[Quote] = []
+        for row in rows:
+            try:
+                symbol = str(row["symbol"]).upper()
+                if symbol not in SYMBOLS:
+                    continue
+                timestamp = to_utc(row.get("timestamp")) or moment
+                received = to_utc(row.get("received_at")) or now_utc()
+                quotes.append(Quote(
+                    symbol=symbol, bid=D(row["bid"]), ask=D(row["ask"]),
+                    last=D(row.get("last") or row["bid"]), timestamp=timestamp,
+                    source="mt5", volume=D(row["volume"]) if row.get("volume") else None,
+                    received_at=received))
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not quotes:
+            self.journal.warning(
+                "market", "BRIDGE_QUOTES_MISSING",
+                "aucune cotation MT5 reçue : aucune décision de marché ce cycle")
+        return quotes
+
+    def _reseed_history_from_bridge(self, moment) -> None:
+        """Aligne l'historique synthétique sur le prix réel du terminal (une fois)."""
+        try:
+            rows = self.connector.quotes(self.settings.symbols)  # type: ignore[attr-defined]
+        except ConnectorError:
+            return
+        prices = {}
+        for row in rows or []:
+            try:
+                symbol = str(row["symbol"]).upper()
+                if symbol in SYMBOLS:
+                    prices[symbol] = D(row.get("last") or row["bid"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        for symbol, price in prices.items():
+            self.simulator.set_price(symbol, price)
+        # Aucune cotation simulée ne doit survivre à la bascule : le pont est
+        # désormais l'unique source de prix.
+        self.market.reset_quotes()
+        for symbol in prices:
+            for timeframe, count in (("1m", 260), ("5m", 240), ("15m", 140)):
+                candles = self.simulator.history(symbol, timeframe, count, end=moment)
+                self.market.series(symbol, timeframe).load(candles)
+        if prices:
+            self.journal.info("market", "HISTORY_RESEEDED",
+                              f"historique réaligné sur le terminal MT5 ({len(prices)} instruments)")
+
     def bootstrap(self) -> None:
         self.db.migrate()
         ensure_permissions(self.settings.db_path)
@@ -133,13 +209,32 @@ class TradingEngine:
         if self._pending_bootstrap_connector:
             try:
                 self.connector.connect()
+                if self.uses_bridge:
+                    account = self.connector.account()
+                    self.journal.info(
+                        "engine", "MT5_BRIDGE_CONNECTED",
+                        f"pont MT5 démo connecté — compte {account.account_id} "
+                        f"({account.currency}), ordres "
+                        f"{'actifs' if getattr(self.connector, 'allow_orders', False) else 'désactivés'}")
+                    self._reseed_history_from_bridge(self.sim_now())
             except ConnectorError as exc:
-                self.journal.error("engine", "CONNECTOR_CONNECT_FAILED",
-                                   f"connexion impossible: {exc}")
+                self.journal.critical("engine", "CONNECTOR_CONNECT_FAILED",
+                                      f"connexion impossible: {exc}")
+                if self.uses_bridge:
+                    # Pas de bascule silencieuse : le pont est la seule source autorisée.
+                    self.journal.critical(
+                        "engine", "MT5_BRIDGE_UNAVAILABLE",
+                        "pont MT5 demandé mais indisponible : nouvelles entrées bloquées")
         self._register_hooks()
         reconciliation = self.reconciler.run("startup")
-        self.entries_enabled = reconciliation["status"] == "OK" and not self.risk_states.state.suspended
-        self._observe_equity(self.connector.account().equity)
+        self.entries_enabled = (reconciliation["status"] == "OK"
+                                and not self.risk_states.state.suspended
+                                and (self.connector.is_connected() or not self.uses_bridge))
+        try:
+            self._observe_equity(self.connector.account().equity)
+        except ConnectorError as exc:
+            self.journal.warning("engine", "EQUITY_UNAVAILABLE",
+                                 f"équité du courtier indisponible : {exc}")
         self.bootstrap_done = True
         self.journal.info("engine", "ENGINE_READY",
                           f"{APP_NAME} {__version__} prêt en environnement "
@@ -198,13 +293,22 @@ class TradingEngine:
 
     def _register_hooks(self) -> None:
         webhook = os.environ.get("CARNET_WEBHOOK_URL")
+        if webhook and not self.alerts.config.url:
+            # Amorçage par variable d'environnement : la configuration persistée
+            # reste prioritaire et les secrets ne sont jamais journalisés.
+            try:
+                self.alerts.configure(url=webhook, enabled=True,
+                                      min_level=os.environ.get("CARNET_WEBHOOK_MIN_LEVEL", "CRITICAL"),
+                                      format=os.environ.get("CARNET_WEBHOOK_FORMAT", "auto"))
+            except ValueError as exc:
+                self.journal.error("notify", "ALERT_CONFIG_INVALID",
+                                   f"configuration du canal d'alerte refusée : {exc}")
 
         def journal_hook(level: str, event: str, message: str, payload: dict[str, Any]) -> None:
             self.notifications.push(level, event, event.replace("_", " ").title(), message)
 
         self.journal._notifier = journal_hook  # branché explicitement, sans effet de bord
-        if webhook:
-            self.notifications.register_hook(_webhook_hook(webhook, self.journal))
+        self.notifications.register_hook(self.alerts.hook)
 
     # ------------------------------------------------------------------
     # Boucle
@@ -256,13 +360,16 @@ class TradingEngine:
     # Un cycle complet
     # ------------------------------------------------------------------
     def sim_now(self):
-        """Heure du marché simulé (accélérée en simulation, réelle sinon)."""
+        """Heure de référence : horloge du terminal si le pont est actif, sinon simulée."""
+        if self.uses_bridge:
+            return now_utc()
         return self.clock.now()
 
     def is_symbol_open(self, symbol: str, moment=None) -> bool:
         """Calendrier d'ouverture ; en simulation, Marché continu si configuré."""
         moment = moment or self.sim_now()
-        if self.guard.environment == ENV_SIMULATION and self.settings.simulation_24_7:
+        if (self.guard.environment == ENV_SIMULATION and self.settings.simulation_24_7
+                and not self.uses_bridge):
             return True
         return is_market_open(symbol, moment)
 
@@ -273,8 +380,8 @@ class TradingEngine:
             self.bootstrap()
         self._tick_count += 1
 
-        # 1. Marché
-        quotes = self.simulator.tick_all(moment)
+        # 1. Marché (pont MT5 démo ou simulation, jamais les deux)
+        quotes = self._collect_quotes(moment)
         for quote in quotes:
             self.market.update_quote(quote)
 
@@ -285,7 +392,20 @@ class TradingEngine:
         self._resolve_unknown_orders()
 
         # 3. Comptes et risque courant
-        account = self.connector.account()
+        try:
+            account = self.connector.account()
+        except ConnectorError as exc:
+            if not self.uses_bridge:
+                raise
+            # Pont muet : on continue à tourner (journal, UI) sans décision de marché.
+            if not getattr(self, "_bridge_down_logged", False):
+                self._bridge_down_logged = True
+                self.journal.error("engine", "MT5_BRIDGE_DOWN",
+                                   f"compte MT5 indisponible, entrées suspendues : {exc}")
+            self.entries_enabled = False
+            cycle["bridge"] = "down"
+            return cycle
+        self._bridge_down_logged = False
         self._observe_equity(account.equity, moment)
         self._monitor_limits(account, moment)
 
@@ -353,9 +473,11 @@ class TradingEngine:
     def _process_signal(self, signal: Signal, account, moment) -> bool:
         started = time.perf_counter()
         context = self._risk_context(account, moment, signal.symbol)
+        order_environment = (self.connector.environment if self.uses_bridge
+                             else self.guard.environment)
         intent = RiskIntent(
             symbol=signal.symbol, side=signal.side, entry=signal.entry_ref,
-            stop=signal.stop, target=signal.target, environment=self.guard.environment,
+            stop=signal.stop, target=signal.target, environment=order_environment,
             strategy=signal.strategy, signal_time=signal.created_at, signal_id=signal.id)
         decision = self.risk.evaluate(intent, context)
         latency = (time.perf_counter() - started) * 1000
@@ -372,7 +494,7 @@ class TradingEngine:
             order = self.orders.submit(
                 symbol=signal.symbol, side=signal.side, qty=decision.qty,
                 stop=signal.stop, target=signal.target, entry=signal.entry_ref,
-                environment=self.guard.environment, strategy=signal.strategy,
+                environment=order_environment, strategy=signal.strategy,
                 signal_id=signal.id)
         except Exception as exc:
             self._record_error("submit_order", exc)
@@ -728,6 +850,8 @@ class TradingEngine:
             "metrics": self.metrics(),
             "notifications": self.notifications.tail(8),
             "unread_notifications": self.notifications.unread_count(),
+            "alerts": self.alerts.status(),
+            "mt5_connection": self.mt5.public(),
             "journal": self.journal.stats(),
             "errors": self._errors[-5:],
             "server_time": iso(now_utc()),
@@ -811,26 +935,3 @@ def _secrets_token(length: int) -> str:
     return secrets.token_urlsafe(length)
 
 
-def _webhook_hook(url: str, journal: Journal):
-    """Notifie un canal externe indépendant du processus principal (section 19.2)."""
-
-    def hook(record: dict[str, Any]) -> None:
-        import threading
-        import urllib.request
-
-        def send() -> None:
-            try:
-                payload = json.dumps({
-                    "level": record["level"], "code": record["code"],
-                    "title": record["title"], "message": record["message"],
-                    "at": record["created_at"],
-                }).encode()
-                request = urllib.request.Request(
-                    url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-                urllib.request.urlopen(request, timeout=5).close()  # nosec - URL fournie par l'exploitant
-            except Exception as exc:  # pragma: no cover - dépend du réseau
-                journal.error("notify", "WEBHOOK_FAILED", f"webhook en échec: {exc}")
-
-        threading.Thread(target=send, daemon=True).start()
-
-    return hook

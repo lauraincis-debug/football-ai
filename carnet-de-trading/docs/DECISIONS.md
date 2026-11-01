@@ -167,5 +167,53 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 222 tests, 88 % global, 98 % risque et ordres ; la suite tourne
-sur n'importe quelle machine sans installation.
+**Conséquences** : 308 tests, 89 % global (5 314 instructions, 575 non couvertes),
+98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
+installation.
+
+## D17 — Pont MT5 sur nœud Windows plutôt que bibliothèque embarquée
+
+**Contexte** : §9 exige MT5 en démo d'abord ; `MetaTrader5` n'existe que pour
+Windows, alors que le VPS d'exécution est Linux.
+**Choix** : un agent HTTP autonome (`scripts/mt5_agent.py`, stdlib + paquet
+officiel) tourne sur le nœud Windows, écoute sur `127.0.0.1` et expose `/health`,
+`/account`, `/positions`, `/orders`, `/quotes`, `/orders` (POST), `/history`. Le
+VPS le joint par tunnel SSH/VPN ou TLS avec un jeton partagé comparé en temps
+constant. Côté moteur, `Mt5ConnectionStore` persiste la configuration dans
+`var/mt5_connection.json` (0600) et `Mt5BridgeConnector` implémente l'interface
+`BrokerConnector`.
+**Conséquences** : aucune bibliothèque propriétaire sur le VPS, surface d'attaque
+limitée à la boucle locale ; en contrepartie un second système à superviser.
+Garde-fous : compte `real` refusé à la connexion, ordres démo désactivés par
+défaut, bracket obligatoire, timeout ⇒ statut inconnu sans renvoi, et aucune
+bascule silencieuse vers la simulation (pont indisponible ⇒ entrées bloquées,
+journal critique).
+
+## D18 — Canal d'alerte par webhook, formats multiples, secret jamais exposé
+
+**Contexte** : §19.2 demande des notifications exploitables hors application.
+**Choix** : un seul mécanisme (webhook HTTPS) avec adaptation de charge utile
+(Slack, Discord, Teams, générique), détection du format depuis l'URL, niveau
+minimum, trois tentatives et repli exponentiel. L'URL est stockée dans
+`var/alerts.json` (0600) et n'est renvoyée que masquée ; l'API expose
+`GET/POST /api/alerts`, `/test`, `/disable`, réservées à `connection:manage` et
+auditées.
+**Conséquences** : aucun SMTP ni dépendance tierce côté serveur ; un webhook
+révoqué se détecte via le compteur d'échecs et le dernier résultat. Le canal
+complète la supervision, il ne la remplace pas.
+
+## D19 — Déploiement systemd durci + reverse proxy TLS fourni tel quel
+
+**Contexte** : §8 place l'exécution sur le VPS ; la mise en ligne doit être
+reproductible et sans exposition directe du service.
+**Choix** : unité `carnet.service` (utilisateur système, `ProtectSystem=strict`,
+`NoNewPrivileges`, `MemoryDenyWriteExecute`, `ReadWritePaths=/var/lib/carnet`),
+configuration dans `/etc/carnet/carnet.env` (0640), vhosts nginx et Caddy avec
+HSTS et limitation de débit sur la connexion, script `install.sh` idempotent,
+`uninstall.sh` avec purge optionnelle, installation de l'agent Windows par
+tâche planifiée (jeton protégé par ACL). Un timer hebdomadaire exécute
+`backup.py drill`.
+**Conséquences** : le port applicatif reste sur `127.0.0.1:8080` ; le TLS et les
+en-têtes de sécurité sont assurés par le proxy ; les mises à jour réutilisent la
+configuration existante. Les fichiers sont versionnés et testés statiquement
+(`tests/test_deploy_kit.py`) : aucune exécution de systemd/nginx dans la suite.

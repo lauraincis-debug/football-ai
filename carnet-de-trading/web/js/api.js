@@ -149,6 +149,15 @@ export const api = {
 
   environment: () => api.get("/api/environment"),
   setEnvironment: (payload) => api.post("/api/environment", payload),
+  connections: () => api.get("/api/connections"),
+  saveMt5: (payload) => api.post("/api/connections/mt5", payload),
+  testMt5: (payload = {}) => api.post("/api/connections/mt5/test", payload),
+  disableMt5: () => api.post("/api/connections/mt5/disable", {}),
+  alerts: () => api.get("/api/alerts"),
+  saveAlerts: (payload) => api.post("/api/alerts", payload),
+  testAlerts: () => api.post("/api/alerts/test", {}),
+  disableAlerts: () => api.post("/api/alerts/disable", {}),
+
   validations: () => api.get("/api/validations"),
   recordValidation: (payload) => api.post("/api/validations", payload),
 

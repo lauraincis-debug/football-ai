@@ -42,6 +42,8 @@ un auditeur de refaire les vérifications.
 | SQLite | documentation officielle | mode WAL, `PRAGMA integrity_check`, backup API |
 | HTTP | RFC 7235 / 9110 | `Authorization: Bearer`, codes 400/401/403/404/409/429 |
 | Convertisseur | conventions de marché | pips vs points, lots vs unités, valeur du point par instrument |
+| systemd | `systemd.exec(5)` / `systemd.service(5)` | directives de durcissement (`ProtectSystem`, `NoNewPrivileges`, `StateDirectory`, `ReadWritePaths`) |
+| Reverse proxy | documentation nginx (`ngx_http_proxy_module`, `ngx_http_ssl_module`) et Caddy (`reverse_proxy`) | TLS 1.2/1.3, HSTS, `proxy_pass` vers la boucle locale, limitation de débit |
 
 **Important** : aucune de ces sources n'a été utilisée pour copier du code ; elles
 ont servi à valider les structures de données et les protocoles. Les implémentations
@@ -51,13 +53,16 @@ sont originales et testées contre des doublures locales.
 
 | Vérification | Méthode | Résultat |
 |---|---|---|
-| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **222 tests OK** |
-| Couverture | `coverage run` (venv jetable hors dépôt) puis `coverage report` | **88 % global**, risque 98 %, ordres 98 % |
+| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **308 tests OK** |
+| Couverture | `coverage run` (venv jetable hors dépôt) puis `coverage report` | **89 % global**, risque 98 %, ordres 98 % |
 | Compilation | `python3 -m compileall backend/carnet` | aucune erreur |
 | Cohérence interface | script d'audit : identifiants HTML vs références JS, vues vs navigation vs rendus | 164 identifiants, 134 références, **0 manquante**, 7/7/7 |
 | Démarrage service | `scripts/run.sh` puis `GET /api/health`, `/api/state` | `ok: true`, réconciliation `OK`, cotations fraîches |
 | Sauvegarde/restauration | `scripts/backup.py create/verify/drill` | création et exercice de restauration réussis |
 | Journal chaîné | `POST /api/journal/verify` | `ok: true` |
+| Pont MT5 démo | agent réel + terminal factice, `tests/test_mt5.py` (35 cas) | compte réel refusé, bracket obligatoire, timeout ⇒ statut inconnu |
+| Canal d'alerte | `tests/test_alerts.py` (20 cas, transport factice) | formats Slack/Discord/Teams/générique, 3 réessais, URL masquée |
+| Kit de déploiement | `tests/test_deploy_kit.py` (19 cas) + `bash -n` | unité durcie, TLS moderne, scripts idempotents |
 
 ## 5. Éléments déclaratifs (non vérifiables ici)
 

@@ -552,6 +552,71 @@
           </div>
         </article>
 
+        <div class="grid two-col" id="connections-grid">
+          <article class="card" id="mt5-card">
+            <header class="card-head"><h3>Connexion MetaTrader 5 (démo)</h3><span class="muted" id="mt5-badge">non configurée</span></header>
+            <p class="muted small">
+              Le terminal MT5 tourne sur un nœud Windows isolé ; le VPS l'interroge via
+              l'agent <span class="mono">scripts/mt5_agent.py</span> (jeton partagé, tunnel ou TLS).
+              Seuls les comptes <strong>démo</strong> sont acceptés : un compte réel est refusé à la connexion.
+            </p>
+            <form id="mt5-form" class="stack">
+              <label class="field"><span>URL de l'agent (https://… ou tunnel SSH)</span><input type="url" id="mt5-url" placeholder="https://mt5.exemple.fr:8787" autocomplete="off" /></label>
+              <label class="field"><span>Jeton du pont <em class="muted">(vide = conserver)</em></span><input type="password" id="mt5-token" autocomplete="new-password" /></label>
+              <div class="field-row">
+                <label class="field"><span>Courtier</span><input type="text" id="mt5-broker" autocomplete="off" /></label>
+                <label class="field"><span>Serveur</span><input type="text" id="mt5-server" autocomplete="off" /></label>
+              </div>
+              <div class="field-row">
+                <label class="field"><span>Login du compte démo</span><input type="text" id="mt5-login" inputmode="numeric" autocomplete="off" /></label>
+                <label class="field"><span>Suffixe d'instrument</span><input type="text" id="mt5-suffix" placeholder=".a" autocomplete="off" /></label>
+              </div>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-enabled" /> <span>Activer le pont (redémarrage du service requis)</span></label>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-orders" /> <span>Autoriser l'envoi d'ordres <strong>démo</strong> (bracket obligatoire)</span></label>
+              <div class="field-row">
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+                <button class="btn btn-ghost" type="button" id="btn-mt5-test">Tester la connexion</button>
+              </div>
+              <button class="btn btn-danger-ghost" type="button" id="btn-mt5-disable">Désactiver le pont</button>
+              <p class="muted small" id="mt5-status">—</p>
+              <p class="form-error" id="mt5-error" role="alert"></p>
+            </form>
+          </article>
+          <article class="card" id="alerts-card">
+            <header class="card-head"><h3>Canal d'alerte</h3><span class="muted" id="alerts-badge">non configuré</span></header>
+            <p class="muted small">
+              Notifications sortantes (Slack, Discord, Teams ou webhook générique) pour les
+              alertes critiques : kill-switch, dépassement de limites, réconciliation rompue,
+              pont indisponible. Aucun secret n'est jamais renvoyé par l'API.
+            </p>
+            <form id="alerts-form" class="stack">
+              <label class="field"><span>URL du webhook</span><input type="url" id="alert-url" placeholder="https://hooks.slack.com/services/…" autocomplete="off" /></label>
+              <div class="field-row">
+                <label class="field"><span>Format</span><select id="alert-format">
+                  <option value="auto">Détection automatique</option>
+                  <option value="slack">Slack</option>
+                  <option value="discord">Discord</option>
+                  <option value="teams">Microsoft Teams</option>
+                  <option value="generic">Générique (JSON)</option>
+                </select></label>
+                <label class="field"><span>Niveau minimum</span><select id="alert-level">
+                  <option value="WARNING">Avertissement</option>
+                  <option value="CRITICAL">Critique</option>
+                  <option value="INFO">Information</option>
+                </select></label>
+              </div>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="alert-enabled" /> <span>Activer l'envoi des alertes</span></label>
+              <div class="field-row">
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+                <button class="btn btn-ghost" type="button" id="btn-alert-test">Envoyer un test</button>
+              </div>
+              <button class="btn btn-danger-ghost" type="button" id="btn-alert-disable">Désactiver</button>
+              <p class="muted small" id="alerts-status">—</p>
+              <p class="form-error" id="alerts-error" role="alert"></p>
+            </form>
+          </article>
+        </div>
+
         <article class="card" id="users-card">
           <header class="card-head"><h3>Utilisateurs</h3><span class="muted">administrateur</span></header>
           <div class="table-wrap">

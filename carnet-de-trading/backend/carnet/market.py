@@ -211,6 +211,11 @@ class MarketDataStore:
                 self._series[(quote.symbol, tf)].add_tick(quote.last, quote.at)
         return quote
 
+    def reset_quotes(self) -> None:
+        """Vide les cotations (bascule simulation → pont : aucune cotation mixte)."""
+        with self._lock:
+            self._quotes.clear()
+
     def quote(self, symbol: str) -> Quote | None:
         return self._quotes.get(symbol)
 
