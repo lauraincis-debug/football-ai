@@ -1,0 +1,11 @@
+# Données d'exécution — jamais versionnées (section 17.1)
+data/
+var/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+.DS_Store

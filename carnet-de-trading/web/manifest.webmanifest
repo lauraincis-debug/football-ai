@@ -1,0 +1,27 @@
+{
+  "name": "Carnet de Trading",
+  "short_name": "Carnet",
+  "description": "Terminal de suivi, d'analyse et d'exécution contrôlée — Forex et crypto Spot. Environnement de simulation, aucun ordre réel.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#090F1D",
+  "theme_color": "#090F1D",
+  "lang": "fr",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

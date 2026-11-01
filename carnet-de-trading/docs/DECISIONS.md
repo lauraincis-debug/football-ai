@@ -1,0 +1,171 @@
+# Décisions d'architecture et arbitrages
+
+Chaque décision indique le contexte, le choix, les alternatives écartées et la
+conséquence. Elles expliquent *pourquoi* le code est ainsi ; le cahier des charges
+n'imposait pas la technique.
+
+---
+
+## D1 — Backend Python sans aucune dépendance tierce
+
+**Contexte** : cahier des charges exigeant, VPS unique, budget d'exploitation
+contraint, auditabilité du code.
+**Choix** : Python 3.10+, bibliothèque standard uniquement (`http.server`,
+`sqlite3`, `hashlib`, `hmac`, `decimal`, `threading`), interface HTML/CSS/JS native.
+**Écarté** : FastAPI/Flask + React (dépendances, chaîne de build, surface d'attaque),
+Node.js (double runtime), framework ORM (opacité des requêtes).
+**Conséquences** : installation instantanée, aucune vulnérabilité transitive, code
+lisible ligne à ligne ; en contrepartie, le serveur HTTP et le routeur sont écrits
+à la main (≈500 lignes) et couverts par des tests.
+
+## D2 — SQLite en mode WAL comme unique base
+
+**Contexte** : un seul processus, volumes faibles (quelques dizaines de milliers de
+lignes), besoin de sauvegardes atomiques et de restauration simple.
+**Choix** : SQLite WAL, 19 tables, migrations idempotentes, `integrity_check`.
+**Écarté** : PostgreSQL (service supplémentaire, sauvegardes plus lourdes),
+fichiers plats (pas de transactions).
+**Conséquences** : sauvegarde = copie cohérente d'un fichier, restauration en
+secondes ; verrou d'écriture unique acceptable au débit visé.
+
+## D3 — Simulation d'abord, réel impossible par construction
+
+**Contexte** : §1.4 interdit tout ordre réel en V1, alors que les connecteurs réels
+doivent être prêts.
+**Choix** : trois couches d'interdiction — (1) `SimulationConnector` refuse tout
+`environment != SIMULATION`, (2) `RealModeGuard.can_activate_real = False`,
+(3) connecteurs réels refusent les ordres sans validation explicite.
+**Écarté** : drapeau d'environnement unique (une erreur de configuration suffirait à
+envoyer un ordre réel).
+**Conséquences** : un bug de configuration ne peut pas créer d'ordre réel ; les
+tests vérifient ces refus.
+
+## D4 — Connecteur de simulation avec carnet d'ordres complet
+
+**Contexte** : sans plateforme réelle, il faut néanmoins éprouver les scénarios
+critiques (partiels, timeouts, stops touchés, réconciliation).
+**Choix** : `SimulationConnector` maintient ordres, positions, fills, frais,
+slippage, marques, et expose des leviers de test (`request_partial_fill`,
+`force_close_all`, pannes du simulateur).
+**Conséquences** : les scénarios §21 sont reproductibles, déterministes (graine) et
+exécutables en CI sans réseau.
+
+## D5 — Persistance de l'état du connecteur (`var/simulation_state.json`)
+
+**Contexte** : bug constaté en exploitation — au redémarrage, les positions locales
+existaient encore mais la plateforme simulée repartait vide, provoquant des
+clôtures `RECONCILED_ABSENT` et des écarts d'équité.
+**Choix** : export/import JSON de l'état simulé (solde, positions, ordres, marques,
+historique clos), écriture atomique (fichier temporaire + `replace`), sauvegarde
+après chaque cycle et à l'arrêt.
+**Écarté** : reconstruire l'état depuis la base locale (contredit la règle « la
+plateforme fait foi »).
+**Conséquences** : un redémarrage conserve positions et solde ; la réconciliation
+reste `OK`. La persistance est volontairement non bloquante : une erreur d'écriture
+ne doit jamais interrompre la négociation (défaut corrigé et testé).
+
+## D6 — Historique de marché continu, filtre de séance pour le live uniquement
+
+**Contexte** : un dimanche, l'historique synthétique filtré par calendrier renvoyait
+0 bougie pour le Forex ⇒ indicateurs vides, backtests en erreur 500, application
+inutilisable le week-end.
+**Choix** : `MarketSimulator.history` génère toujours `count` bougies ; le filtre de
+séance (`is_market_open`) ne s'applique qu'aux cotations live.
+**Conséquences** : indicateurs et backtests disponibles en permanence ; les règles
+de marché restent appliquées à l'exécution (contrôle `MARKET_CLOSED`).
+**Compromis assumé** : les graphiques Forex affichent des données continues, ce qui
+est cohérent avec un environnement de simulation explicitement signalé.
+
+## D7 — Authentification par session porteuse, pas de JWT
+
+**Contexte** : application mono-utilisateur à quelques comptes, besoin de révocation
+immédiate et de simplicité d'audit.
+**Choix** : jetons opaques (`secrets.token_urlsafe`) stockés hachés en base, TTL,
+révocation par session, liste des sessions actives.
+**Écarté** : JWT (révocation complexe, signature à gérer), cookies (CSRF).
+**Conséquences** : révocation instantanée, aucune donnée sensible dans le jeton ;
+l'interface stocke le jeton en mémoire + `sessionStorage` et l'envoie en en-tête.
+
+## D8 — Permissions vérifiées par route, rôles fixes
+
+**Contexte** : §17 exige un moindre privilège et une trace des actions.
+**Choix** : trois rôles (VIEWER, OPERATOR, ADMIN), permissions déclaratives sur
+chaque route du routeur, refus 403 testé, double contrôle sur les actions sensibles
+(ex. reprise : rôle + réconciliation).
+**Écarté** : permissions stockées en base (complexité inutile en V1), contrôle
+uniquement dans l'interface (contournable).
+**Conséquences** : aucun accès en écriture pour un lecteur, même via l'API directe.
+
+## D9 — Jeton propriétaire hors base pour les décisions réservées
+
+**Contexte** : §1.3 réserve certaines décisions au propriétaire (politique de risque,
+passage au réel).
+**Choix** : `OwnerGate` lit le jeton dans l'environnement ou `var/owner_token`
+(droits 600), jamais en base ni dans le journal, comparaison en temps constant, plus
+une phrase de confirmation.
+**Conséquences** : même un administrateur compromis ne peut pas modifier la
+politique sans le secret détenu hors application.
+
+## D10 — Journal chaîné plutôt que simple table de logs
+
+**Contexte** : §20 exige la détection d'une altération manuelle.
+**Choix** : chaque entrée contient le hachage de l'entrée précédente ; vérification
+à la demande, rupture = alerte critique + notification.
+**Conséquences** : altération détectable sans infrastructure externe ; coût
+négligeable (SHA-256 sur quelques centaines d'octets).
+
+## D11 — Politique de risque versionnée et chaînée
+
+**Contexte** : les limites doivent être auditables dans le temps et non modifiables
+silencieusement.
+**Choix** : table `policy_versions` chaînée, validation stricte (bornes), version
+incrémentée, motif et auteur enregistrés.
+**Conséquences** : historique complet, refus des valeurs absurdes, possibilité de
+comparer les décisions à la version en vigueur.
+
+## D12 — Suspension persistante, reprise conditionnée
+
+**Contexte** : §21.2 exige que la limite journalière survive à un redémarrage.
+**Choix** : l'état de risque (suspension, kill switch, ancres d'équité) est stocké
+dans `settings_kv` et rechargé au démarrage ; la reprise exige une réconciliation
+`OK` et l'absence de kill switch.
+**Conséquences** : redémarrer ne réarme jamais les limites ; la reprise est un
+choix explicite, jamais automatique.
+
+## D13 — Backtest avec coûts réalistes et analyses de robustesse
+
+**Contexte** : §16 exige walk-forward et Monte-Carlo, §15 les coûts.
+**Choix** : coûts = demi-spread + commission + slippage, appliqués à l'entrée et à
+la sortie ; Monte-Carlo par bootstrap des transactions ; walk-forward par fenêtres
+indépendantes ; référence « achat et conservation ».
+**Conséquences** : résultats reproductibles (graine) et honnêtes ; Monte-Carlo
+explicitement présenté comme mesure de robustesse, pas comme prédiction.
+
+## D14 — Interface sans framework, servie par la même origine
+
+**Contexte** : §8 (le VPS exécute), §18.3 (direction artistique), pas de chaîne de
+build.
+**Choix** : HTML/CSS/JS natifs, rendu par fonctions idempotentes, graphiques SVG,
+manifeste PWA + service worker.
+**Écarté** : SPA React (build, dépendances), site statique séparé (CORS, secrets).
+**Conséquences** : une seule origine, aucun CORS, chargement immédiat, déploiement
+= copie de fichiers ; en contrepartie, le code d'interface est explicite et testé
+par audit statique.
+
+## D15 — Sauvegardes chiffrées optionnelles et restauration à froid
+
+**Contexte** : §17.1 (protection des données) et §20.2 (continuité).
+**Choix** : sauvegarde vérifiée (intégrité SQLite avant écriture), gzip, chiffrement
+AES-256-CBC + HMAC-SHA256 si phrase de passe, manifeste, rétention, exercice de
+restauration ; restauration en production refusée à chaud (HTTP 409) et réservée à
+`scripts/restore.sh` service arrêté.
+**Conséquences** : pas de corruption possible par restauration concurrente ; RTO
+mesuré par l'exercice automatique.
+
+## D16 — Tests sans dépendance, seuils de couverture mesurés
+
+**Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
+**Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
+couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
+**Conséquences** : 222 tests, 88 % global, 98 % risque et ordres ; la suite tourne
+sur n'importe quelle machine sans installation.
