@@ -46,7 +46,14 @@ function escapeHtml(value) {
 function num(value, digits = 2) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("fr-FR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  // Garde-fou : un appelant peut passer une devise (chaîne) au lieu d'un nombre de
+  // décimales ; Intl lèverait alors un RangeError qui interromprait tout le rendu.
+  const places = Number(digits);
+  const fraction = Number.isInteger(places) && places >= 0 && places <= 20 ? places : 2;
+  return n.toLocaleString("fr-FR", {
+    minimumFractionDigits: fraction,
+    maximumFractionDigits: fraction,
+  });
 }
 
 function money(value, currency = "USD", digits = 2) {
@@ -455,7 +462,7 @@ function renderDashboard() {
   ret.textContent = pct(perf.return_pct);
   ret.className = `delta ${perf.return_pct >= 0 ? "up" : "down"}`;
   const pnl = $("#kpi-pnl");
-  pnl.textContent = signed(perf.realized_pnl + perf.unrealized, currency);
+  pnl.textContent = signed(perf.realized_pnl + perf.unrealized, 2, currency);
   pnl.style.color = perf.realized_pnl + perf.unrealized >= 0 ? "var(--gain)" : "var(--loss)";
   $("#kpi-fees").textContent = money(perf.fees, currency);
   $("#kpi-open-risk").textContent = money(state.risk.open_risk, currency);

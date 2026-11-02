@@ -167,7 +167,7 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 328 tests, 89 % global (5 379 instructions, 565 non couvertes),
+**Conséquences** : 333 tests, 89 % global (5 379 instructions, 565 non couvertes),
 98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
 installation.
 
@@ -238,3 +238,21 @@ de connexion renvoie `symbols.matched` / `symbols.missing`, ce qui permet de ré
 la correspondance sans deviner les noms. Enfin, ``CARNET_SYMBOLS`` permet de
 restreindre les instruments suivis à ceux que le courtier propose réellement —
 sans modifier le code ni la base.
+
+## D-14 — Formatage de l'interface : jamais d'exception de rendu
+
+**Contexte** : le tableau de bord s'arrêtait après la carte « Equity ». `signed()`
+recevait la devise (`"USD"`) à la place du nombre de décimales ; `Intl.NumberFormat`
+levait un `RangeError` et toutes les cartes suivantes (P&L, risque, marge, courbe,
+limites, positions) restaient vides, alors que l'API renvoyait des valeurs correctes.
+
+**Décision** :
+1. corriger l'appel (`signed(valeur, 2, devise)`) ;
+2. durcir `num()` : toute décimale non entière ou hors bornes retombe sur 2, afin
+   qu'une erreur d'appel ne puisse plus interrompre le rendu ;
+3. ajouter des tests statiques (arguments des appels `money`/`signed`) et un test
+   d'exécution Node qui vérifie que le formatage produit du texte au lieu de lever.
+
+**Conséquences** : 5 tests de plus (333 au total), rendu du tableau de bord non
+bloquant. Leçon : les tests d'identifiants HTML ne suffisent pas, il faut aussi
+tester le comportement des fonctions de formatage.

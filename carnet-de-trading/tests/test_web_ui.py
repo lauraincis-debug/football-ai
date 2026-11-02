@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -131,7 +133,7 @@ class PwaTests(unittest.TestCase):
         for asset in ("/styles.css", "/js/app.js", "/manifest.webmanifest",
                       "/icons/icon-192.png"):
             self.assertIn(asset, sw)
-        self.assertIn("carnet-shell-v2", sw)
+        self.assertIn("carnet-shell-v3", sw)
         self.assertIn('url.pathname.startsWith("/api/")', sw)
 
     def test_png_files_have_expected_dimensions(self):
@@ -149,6 +151,99 @@ class PwaTests(unittest.TestCase):
             got_w, got_h = struct.unpack(">II", data[16:24])
             self.assertEqual((got_w, got_h), (width, height), name)
             self.assertLess(len(data), 200_000, f"{name} trop lourd pour un lanceur")
+
+
+class DashboardFormattingTests(unittest.TestCase):
+    """Le tableau de bord ne doit jamais s'interrompre sur un formatage.
+
+    Régression : `signed(perf.realized_pnl + perf.unrealized, currency)` passait la
+    devise à la place du nombre de décimales ; `Intl.NumberFormat` levait un
+    RangeError et tout le rendu situé après la carte « P&L net » restait vide.
+    """
+
+    HELPERS = ("function num(", "function priceDigits(")
+
+    def _js_helpers(self) -> str:
+        start = APP.index(self.HELPERS[0])
+        end = APP.index(self.HELPERS[1])
+        return APP[start:end]
+
+    @staticmethod
+    def _calls(source: str, name: str) -> list[list[str]]:
+        """Découpe les arguments de chaque appel ``name(...)`` au premier niveau."""
+        calls: list[list[str]] = []
+        needle = f"{name}("
+        index = source.find(needle)
+        while index != -1:
+            if source[max(0, index - 9):index] == "function ":
+                index = source.find(needle, index + len(needle))
+                continue
+            depth, current, args, i = 1, "", [], index + len(needle)
+            while i < len(source) and depth:
+                char = source[i]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if not depth:
+                        break
+                if char == "," and depth == 1:
+                    args.append(current.strip())
+                    current = ""
+                else:
+                    current += char
+                i += 1
+            args.append(current.strip())
+            calls.append([arg for arg in args if arg])
+            index = source.find(needle, i)
+        return calls
+
+    def test_signed_second_argument_is_numeric(self):
+        for args in self._calls(APP, "signed"):
+            if len(args) >= 2:
+                self.assertRegex(
+                    args[1], r"^(\d+|digits)$",
+                    f"signed({', '.join(args)}) : le 2e argument doit être un nombre "
+                    "de décimales, pas une devise")
+
+    def test_money_third_argument_is_numeric(self):
+        for args in self._calls(APP, "money"):
+            if len(args) >= 3:
+                self.assertRegex(
+                    args[2], r"^(\d+|digits)$",
+                    f"money({', '.join(args)}) : le 3e argument doit être un nombre "
+                    "de décimales")
+
+    def test_dashboard_pnl_call_passes_digits_before_currency(self):
+        self.assertIn(
+            "signed(perf.realized_pnl + perf.unrealized, 2, currency)", APP)
+
+    def test_num_coerces_invalid_digits(self):
+        helpers = self._js_helpers()
+        self.assertIn("Number.isInteger(places)", helpers)
+        self.assertIn("const fraction =", helpers)
+
+    @unittest.skipUnless(shutil.which("node"), "node absent : test d'exécution ignoré")
+    def test_helpers_render_instead_of_throwing(self):
+        helpers = self._js_helpers()
+        script = helpers + """
+const out = {
+  money: money(1234.5, "USD"),
+  signed: signed(-50.71, "USD"),
+  numAuto: num(1234.5, "auto"),
+  numNeg: num(-2.5, -3),
+};
+process.stdout.write(JSON.stringify(out));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        normalize = lambda value: value.replace("\u202f", " ").replace("\u00a0", " ")
+        self.assertEqual(normalize(payload["money"]), "1 234,50$")
+        self.assertEqual(normalize(payload["signed"]), "-50,71$")
+        self.assertEqual(normalize(payload["numAuto"]), "1 234,50")
+        self.assertEqual(normalize(payload["numNeg"]), "-2,50")
 
 
 class ApiClientTests(unittest.TestCase):
