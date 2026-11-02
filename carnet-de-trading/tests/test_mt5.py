@@ -7,6 +7,7 @@ import json
 import pathlib
 import sys
 import threading
+import unittest.mock
 import time
 import unittest
 from decimal import Decimal
@@ -312,6 +313,8 @@ class Mt5ConnectorTests(unittest.TestCase):
         self.assertEqual([row["canonical"] for row in report["matched"]], ["EURUSD"])
         self.assertEqual(report["matched"][0]["platform"], "EURUSD.a")
         self.assertEqual(report["missing"], ["BTCUSDT", "SOLUSDT"])
+        self.assertIn("EURUSD.A", report["available_sample"])
+        self.assertEqual(len(report["available_sample"]), 6)
 
     def test_symbol_listing_requires_connection(self):
         connector = self.connector()
@@ -602,6 +605,39 @@ class EngineBridgeTests(unittest.TestCase):
             environment="DEMO")
         with self.assertRaises(ConnectorUnavailable):
             engine.connector.place_order(request)
+
+
+class SymbolSelectionTests(unittest.TestCase):
+    """CARNET_SYMBOLS restreint les instruments suivis au sous-ensemble du courtier."""
+
+    def test_default_is_all_instruments(self):
+        from carnet import config
+
+        with unittest.mock.patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop("CARNET_SYMBOLS", None)
+            self.assertEqual(config._symbols_from_env(), tuple(config.SYMBOLS))
+
+    def test_subset_is_validated_and_deduplicated(self):
+        from carnet import config
+
+        with unittest.mock.patch.dict("os.environ", {"CARNET_SYMBOLS": "eurusd, BTCUSDT;EURUSD"}):
+            self.assertEqual(config._symbols_from_env(), ("EURUSD", "BTCUSDT"))
+
+    def test_unknown_instrument_is_rejected(self):
+        from carnet import config
+
+        with unittest.mock.patch.dict("os.environ", {"CARNET_SYMBOLS": "EURUSD,DOGEUSDT"}):
+            with self.assertRaises(ValueError) as ctx:
+                config._symbols_from_env()
+        self.assertIn("DOGEUSDT", str(ctx.exception))
+
+    def test_empty_value_is_rejected(self):
+        from carnet import config
+
+        with unittest.mock.patch.dict("os.environ", {"CARNET_SYMBOLS": " , "}):
+            with self.assertRaises(ValueError):
+                config._symbols_from_env()
 
 
 class SnapshotHygieneTests(unittest.TestCase):

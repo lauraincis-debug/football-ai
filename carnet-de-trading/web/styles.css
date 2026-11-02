@@ -368,6 +368,7 @@ input:focus-visible, select:focus-visible, summary:focus-visible {
 }
 .field select[multiple] { min-height: 96px; }
 .field input::placeholder { color: var(--text-faint); }
+#mt5-instruments { white-space: pre-line; word-break: break-word; line-height: 1.5; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
 .field-col { display: flex; flex-direction: column; gap: .7rem; }
 .form-error { color: var(--loss); font-size: .78rem; min-height: 1rem; }

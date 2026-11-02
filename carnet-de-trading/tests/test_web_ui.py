@@ -60,7 +60,7 @@ class ConnectionsPanelTests(unittest.TestCase):
         "btn-mt5-test", "btn-mt5-disable", "mt5-badge", "mt5-status", "mt5-error",
         "alerts-card", "alerts-form", "alert-url", "alert-format", "alert-level",
         "alert-enabled", "btn-alert-test", "btn-alert-disable", "alerts-badge",
-        "alerts-status", "alerts-error",
+        "alerts-status", "alerts-error", "mt5-instruments", "mt5-instruments-box",
     }
 
     def test_panel_controls_present(self):

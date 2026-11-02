@@ -146,6 +146,10 @@ CARNET_WEBHOOK_URL=
   `var/initial_credentials.txt` (0600). Changez-le après la première connexion.
 - `CARNET_WEBHOOK_URL` : amorce le canal d'alerte si rien n'est configuré dans
   l'interface ; la configuration persistée reste prioritaire.
+- `CARNET_SYMBOLS` : restreint les instruments suivis. À utiliser quand le
+  courtier ne propose qu'une partie de la liste : le moteur ignore alors les
+  autres, sans cotation ni avertissement répété. Un nom inconnu bloque le
+  démarrage avec un message explicite.
 - `CARNET_ALLOW_REAL` : **laisser à 0**. Même à 1, la V1 refuse le mode réel
   faute de validations et de sélection courtier (section 24/26).
 

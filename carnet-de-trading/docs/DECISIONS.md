@@ -167,7 +167,7 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 317 tests, 89 % global (5 379 instructions, 565 non couvertes),
+**Conséquences** : 321 tests, 89 % global (5 379 instructions, 565 non couvertes),
 98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
 installation.
 
@@ -235,4 +235,6 @@ code, seulement une ligne de configuration ; en cas d'erreur de nom, le pont
 signale l'instrument inconnu côté terminal (`MT5_QUOTE_MISSING` /
 `MT5_UNKNOWN_SYMBOL`) sans ordre implicite. L'agent expose `GET /symbols` et le test
 de connexion renvoie `symbols.matched` / `symbols.missing`, ce qui permet de régler
-la correspondance sans deviner les noms.
+la correspondance sans deviner les noms. Enfin, ``CARNET_SYMBOLS`` permet de
+restreindre les instruments suivis à ceux que le courtier propose réellement —
+sans modifier le code ni la base.

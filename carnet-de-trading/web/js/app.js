@@ -1209,6 +1209,17 @@ async function onTestMt5() {
   if (Object.keys(symbolMap).length) payload.symbol_map = symbolMap;
   try {
     const { result } = await api.testMt5(payload);
+    const symbols = result.symbols || {};
+    if (symbols.checked) {
+      const matched = (symbols.matched || [])
+        .map((row) => `${row.canonical} → ${row.platform}`).join(", ") || "aucun";
+      const missing = (symbols.missing || []).join(", ") || "aucun";
+      const sample = (symbols.available_sample || []).join(", ") || "—";
+      $("#mt5-instruments").textContent =
+        `Reconnus : ${matched}\nManquants : ${missing}\n`
+        + `Disponibles (${symbols.available_count || 0}) : ${sample}`;
+      $("#mt5-instruments-box").open = true;
+    }
     if (result.ok) {
       const symbols = result.symbols || {};
       const missing = symbols.missing || [];

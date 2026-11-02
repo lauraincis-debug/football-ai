@@ -264,6 +264,7 @@ class Mt5BridgeConnector(BrokerConnector):
         return {
             "ok": True, "checked": list(canonical), "matched": matched,
             "missing": missing, "available_count": len(available),
+            "available_sample": sorted(available)[:60],
             "suffix": self.symbol_suffix or None,
             "map": dict(self.symbol_map),
         }

@@ -48,7 +48,7 @@ source d'exécution, rien ne dépend du poste de l'utilisateur).
 ## 2. Tests
 
 ```bash
-./scripts/test.sh                    # 317 tests, ~85 s
+./scripts/test.sh                    # 321 tests, ~100 s
 ./scripts/test.sh risk               # un seul module
 ```
 
@@ -86,7 +86,7 @@ carnet-de-trading/
 │   ├── backup.py            sauvegardes vérifiées, chiffrées, exercices
 │   └── api.py               routeur, permissions, fichiers statiques, en-têtes
 ├── web/                     interface (aucune dépendance, hors ligne)
-├── tests/                   317 tests (stdlib unittest)
+├── tests/                   321 tests (stdlib unittest)
 ├── scripts/                 run.sh, test.sh, backup.py, restore.sh, mt5_agent.py
 ├── deploy/                  systemd, nginx, Caddy, agent Windows, install.sh
 └── docs/                    cahier des charges, décisions, blocages, opérations, déploiement
@@ -123,6 +123,7 @@ voir `docs/BLOCKERS.md`.
 | `CARNET_SEED` | `20261101` | graine du marché simulé (déterminisme) |
 | `CARNET_SIM_SPEED` | `300` | accélération de l'horloge simulée |
 | `CARNET_SIM_24_7` | `1` | marché simulé continu (démo utilisable le week-end) |
+| `CARNET_SYMBOLS` | tous | sous-ensemble d'instruments suivis (ex. `EURUSD,BTCUSDT`) |
 | `CARNET_TICK_SECONDS` | `1.0` | période de la boucle réelle |
 | `CARNET_INITIAL_CAPITAL` | `10000` | capital initial simulé |
 | `CARNET_DATA_DIR` / `CARNET_VAR_DIR` | `data/` / `var/` | base et état d'exécution |
@@ -202,7 +203,7 @@ TLS et vérifie `/api/health`. Détails et procédures de retour arrière :
 
 ## 10. État de livraison
 
-- Tests : **317 / 317 OK** (≈85 s).
+- Tests : **321 / 321 OK** (≈100 s).
 - Couverture : **89 %** global, **98 %** risque et ordres ; alertes 96 %, pont MT5 88 %, connexions 96 %.
 - Démarrage vérifié : API, interface, boucle moteur, réconciliation `OK`.
 - Environnement livré : `SIMULATION`, capital 10 000, 6 instruments, 3 stratégies.

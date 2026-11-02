@@ -118,8 +118,9 @@ manuelle de `docs/OPERATIONS.md` §6 couvre les parcours critiques.
 
 ## B9 — Indices synthétiques (Deriv Volatility, Boom/Crash) non configurés
 
-**Constat** : le propriétaire détient un compte **Deriv** (démo visible : 7 487 USD,
-produit Rise/Fall sur `Volatility 100 (1s) Index`). Deriv propose deux familles :
+**Constat** : le propriétaire détient un compte **Deriv** et a créé un **compte démo
+Deriv MT5** (serveur `Deriv-Demo`, terminal web affichant `AAVUSD` en H1). Deriv
+propose deux familles :
 - **Deriv Trader / options** (Rise/Fall, durations en ticks, paiement fixe) : produit
   à expiration, sans stop ni objectif, incompatible avec le moteur à bracket ;
 - **Deriv MT5** (Standard / swap-free) : compte démo MT5 classique, avec forex

@@ -280,6 +280,30 @@ def _env_path(name: str, default: Path) -> Path:
     return Path(raw).expanduser().resolve() if raw else default
 
 
+def _symbols_from_env() -> tuple[str, ...]:
+    """Instruments négociés, restreignables par ``CARNET_SYMBOLS``.
+
+    Utile quand le courtier ne propose qu'une partie des instruments : le moteur
+    ne suit alors que ceux qui existent réellement, sans avertissement inutile.
+    """
+    raw = os.environ.get("CARNET_SYMBOLS", "").strip()
+    if not raw:
+        return tuple(SYMBOLS)
+    names: list[str] = []
+    for chunk in raw.replace(";", ",").split(","):
+        name = chunk.strip().upper()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        raise ValueError("CARNET_SYMBOLS ne contient aucun instrument")
+    unknown = [name for name in names if name not in SYMBOLS]
+    if unknown:
+        raise ValueError(
+            f"CARNET_SYMBOLS : instruments inconnus ({', '.join(unknown)}) ; "
+            f"disponibles : {', '.join(SYMBOLS)}")
+    return tuple(names)
+
+
 @dataclass(frozen=True)
 class Settings:
     root: Path
@@ -298,7 +322,7 @@ class Settings:
     allow_real_trading: bool = os.environ.get("CARNET_ALLOW_REAL", "0") == "1"
     seed: int = int(os.environ.get("CARNET_SEED", "20261101"))
     log_level: str = os.environ.get("CARNET_LOG_LEVEL", "INFO")
-    symbols: tuple[str, ...] = field(default_factory=lambda: tuple(SYMBOLS))
+    symbols: tuple[str, ...] = field(default_factory=_symbols_from_env)
     demo_mode: bool = os.environ.get("CARNET_DEMO_DATA", "0") == "1"
     #: En SIMULATION uniquement : marché synthétique continu, pour que la
     #: démonstration reste utilisable un week-end. Le calendrier réel reste
