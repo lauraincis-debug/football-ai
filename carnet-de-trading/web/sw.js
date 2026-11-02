@@ -1,7 +1,7 @@
 /* Service worker : coquille applicative hors ligne, API toujours en réseau.
    Aucune donnée de trading n'est mise en cache : l'état doit venir du serveur. */
 
-const CACHE = "carnet-shell-v1";
+const CACHE = "carnet-shell-v2";
 const SHELL = [
   "/",
   "/styles.css",
@@ -10,6 +10,9 @@ const SHELL = [
   "/js/charts.js",
   "/manifest.webmanifest",
   "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {

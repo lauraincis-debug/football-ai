@@ -24,6 +24,10 @@ jamais de renvoi ; jeton absent ou invalide ⇒ `MT5_BRIDGE_UNAUTHORIZED`.
 **Impact restant** : aucun flux réel de courtier n'a encore été observé — latence,
 qualité de remplissage, arrondis, suffixes d'instruments, comportement des
 protections côté courtier (stop/objectif) restent à valider sur un compte démo.
+Le propriétaire travaille actuellement **sans ordinateur** : l'agent Windows ne peut
+être installé ni sur Android ni sur iOS. Options documentées dans
+`docs/PHONE_ONLY.md` §4 : rester en simulation, louer un VPS Windows administré via
+Remote Desktop depuis le téléphone, ou attendre un accès ponctuel à un PC.
 **Options**
 1. Nœud Windows dédié (ou VM Windows) + terminal MT5 + agent maison — conforme au
    §9, aucune dépendance tierce, mais maintenance Windows à assurer.

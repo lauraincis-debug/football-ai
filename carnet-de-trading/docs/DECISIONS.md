@@ -167,7 +167,7 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 321 tests, 89 % global (5 379 instructions, 565 non couvertes),
+**Conséquences** : 325 tests, 89 % global (5 379 instructions, 565 non couvertes),
 98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
 installation.
 

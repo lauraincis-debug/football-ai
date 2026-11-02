@@ -359,5 +359,5 @@ pont MT5 démo et canal d'alerte externe, kit de déploiement systemd/TLS.
 - Exigences dépendant d'un tiers : **7 blocages** documentés (`BLOCKERS.md`),
   chacun avec options et recommandation — aucun ne bloque l'usage de la V1 en
   simulation.
-- 321 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 89 %
+- 325 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 89 %
   (5 379 instructions, 565 non couvertes).

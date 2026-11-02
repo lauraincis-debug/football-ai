@@ -16,6 +16,8 @@ testés et bloquants par construction.
   réessais et URL masquée.
 - **Kit de déploiement VPS** : unité systemd durcie, reverse proxy TLS (nginx ou
   Caddy), scripts d'installation/désinstallation, agent MT5 Windows.
+- **Installable sur téléphone** (PWA : manifest, icônes PNG, service worker hors ligne
+  pour la coquille uniquement).
 - Aucune dépendance tierce : **Python 3.10+ (stdlib seulement)**, HTML/CSS/JS natifs.
 
 ---
@@ -48,7 +50,7 @@ source d'exécution, rien ne dépend du poste de l'utilisateur).
 ## 2. Tests
 
 ```bash
-./scripts/test.sh                    # 321 tests, ~100 s
+./scripts/test.sh                    # 325 tests, ~75 s
 ./scripts/test.sh risk               # un seul module
 ```
 
@@ -86,7 +88,7 @@ carnet-de-trading/
 │   ├── backup.py            sauvegardes vérifiées, chiffrées, exercices
 │   └── api.py               routeur, permissions, fichiers statiques, en-têtes
 ├── web/                     interface (aucune dépendance, hors ligne)
-├── tests/                   321 tests (stdlib unittest)
+├── tests/                   325 tests (stdlib unittest)
 ├── scripts/                 run.sh, test.sh, backup.py, restore.sh, mt5_agent.py
 ├── deploy/                  systemd, nginx, Caddy, agent Windows, install.sh
 └── docs/                    cahier des charges, décisions, blocages, opérations, déploiement
@@ -162,6 +164,7 @@ voir `docs/BLOCKERS.md`.
 | `docs/DECISIONS.md` | décisions d'architecture et arbitrages |
 | `docs/BLOCKERS.md` | blocages réels, options, recommandation |
 | `docs/OPERATIONS.md` | exploitation VPS, incidents, sauvegardes, mises à jour |
+| `docs/PHONE_ONLY.md` | utilisation depuis un téléphone (PWA, alertes, pont MT5 sans PC) |
 | `docs/DEPLOYMENT.md` | installation VPS (systemd, TLS, pont MT5, alertes) |
 | `docs/REPORT_SOURCES.md` | sources utilisées et vérifications |
 
@@ -203,7 +206,7 @@ TLS et vérifie `/api/health`. Détails et procédures de retour arrière :
 
 ## 10. État de livraison
 
-- Tests : **321 / 321 OK** (≈100 s).
+- Tests : **325 / 325 OK** (≈75 s).
 - Couverture : **89 %** global, **98 %** risque et ordres ; alertes 96 %, pont MT5 88 %, connexions 96 %.
 - Démarrage vérifié : API, interface, boucle moteur, réconciliation `OK`.
 - Environnement livré : `SIMULATION`, capital 10 000, 6 instruments, 3 stratégies.

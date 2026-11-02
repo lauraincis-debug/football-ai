@@ -53,7 +53,7 @@ sont originales et testées contre des doublures locales.
 
 | Vérification | Méthode | Résultat |
 |---|---|---|
-| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **317 tests OK** |
+| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **325 tests OK** |
 | Couverture | `coverage run` (venv jetable hors dépôt) puis `coverage report` | **89 % global**, risque 98 %, ordres 98 % |
 | Compilation | `python3 -m compileall backend/carnet` | aucune erreur |
 | Cohérence interface | script d'audit : identifiants HTML vs références JS, vues vs navigation vs rendus | 164 identifiants, 134 références, **0 manquante**, 7/7/7 |

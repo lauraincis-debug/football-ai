@@ -8,6 +8,7 @@ panneaux (pont MT5, canal d'alerte) et absence de gestionnaire inline (CSP).
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -102,6 +103,52 @@ class ConnectionsPanelTests(unittest.TestCase):
                       "/api/connections/mt5/test", "/api/connections/mt5/disable",
                       "/api/alerts", "/api/alerts/test", "/api/alerts/disable"):
             self.assertIn(route, API, route)
+
+
+class PwaTests(unittest.TestCase):
+    """Installation sur l'écran d'accueil : icônes, manifest, service worker."""
+
+    def test_manifest_declares_installable_icons(self):
+        manifest = json.loads((WEB / "manifest.webmanifest").read_text(encoding="utf-8"))
+        sources = {icon["src"] for icon in manifest["icons"]}
+        for required in ("/icons/icon-192.png", "/icons/icon-512.png",
+                         "/icons/icon-maskable-512.png"):
+            self.assertIn(required, sources)
+        sizes = {icon.get("sizes") for icon in manifest["icons"]}
+        self.assertIn("192x192", sizes)
+        self.assertIn("512x512", sizes)
+        self.assertTrue(any(icon.get("purpose") == "maskable" for icon in manifest["icons"]))
+        self.assertEqual(manifest["display"], "standalone")
+        self.assertEqual(manifest["lang"], "fr")
+
+    def test_html_links_apple_and_png_icons(self):
+        self.assertIn('rel="apple-touch-icon"', HTML)
+        self.assertIn("/icons/apple-touch-icon.png", HTML)
+        self.assertIn('rel="manifest"', HTML)
+
+    def test_service_worker_caches_shell_and_icons(self):
+        sw = (WEB / "sw.js").read_text(encoding="utf-8")
+        for asset in ("/styles.css", "/js/app.js", "/manifest.webmanifest",
+                      "/icons/icon-192.png"):
+            self.assertIn(asset, sw)
+        self.assertIn("carnet-shell-v2", sw)
+        self.assertIn('url.pathname.startsWith("/api/")', sw)
+
+    def test_png_files_have_expected_dimensions(self):
+        import struct
+
+        expected = {
+            "icon-192.png": (192, 192),
+            "icon-512.png": (512, 512),
+            "icon-maskable-512.png": (512, 512),
+            "apple-touch-icon.png": (180, 180),
+        }
+        for name, (width, height) in expected.items():
+            data = (WEB / "icons" / name).read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n", name)
+            got_w, got_h = struct.unpack(">II", data[16:24])
+            self.assertEqual((got_w, got_h), (width, height), name)
+            self.assertLess(len(data), 200_000, f"{name} trop lourd pour un lanceur")
 
 
 class ApiClientTests(unittest.TestCase):
