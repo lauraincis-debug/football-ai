@@ -164,6 +164,7 @@ voir `docs/BLOCKERS.md`.
 | `docs/DECISIONS.md` | décisions d'architecture et arbitrages |
 | `docs/BLOCKERS.md` | blocages réels, options, recommandation |
 | `docs/OPERATIONS.md` | exploitation VPS, incidents, sauvegardes, mises à jour |
+| `docs/GUIDE_RAPIDE_TELEPHONE.md` | parcours de 10 minutes sur téléphone (connexion, alertes, observation) |
 | `docs/PHONE_ONLY.md` | utilisation depuis un téléphone (PWA, alertes, pont MT5 sans PC) |
 | `docs/DEPLOYMENT.md` | installation VPS (systemd, TLS, pont MT5, alertes) |
 | `docs/REPORT_SOURCES.md` | sources utilisées et vérifications |
