@@ -571,6 +571,12 @@
                 <label class="field"><span>Login du compte démo</span><input type="text" id="mt5-login" inputmode="numeric" autocomplete="off" /></label>
                 <label class="field"><span>Suffixe d'instrument</span><input type="text" id="mt5-suffix" placeholder=".a" autocomplete="off" /></label>
               </div>
+              <label class="field"><span>Correspondance d'instruments (optionnel)</span><input type="text" id="mt5-symbol-map" placeholder="EURUSD=frxEURUSD, BTCUSDT=cryBTCUSD" autocomplete="off" /></label>
+              <p class="muted small" id="mt5-symbol-map-help">
+                À renseigner si le courtier renomme les instruments (Deriv : <span class="mono">frxEURUSD</span>,
+                <span class="mono">cryBTCUSD</span>). Format <span class="mono">CANONIQUE=PLATEFORME</span>,
+                séparés par des virgules. Laissez vide si les noms sont identiques.
+              </p>
               <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-enabled" /> <span>Activer le pont (redémarrage du service requis)</span></label>
               <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-orders" /> <span>Autoriser l'envoi d'ordres <strong>démo</strong> (bracket obligatoire)</span></label>
               <div class="field-row">

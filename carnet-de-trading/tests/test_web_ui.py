@@ -55,7 +55,8 @@ class ConnectionsPanelTests(unittest.TestCase):
 
     REQUIRED_IDS = {
         "connections-grid", "mt5-card", "mt5-form", "mt5-url", "mt5-token", "mt5-broker",
-        "mt5-server", "mt5-login", "mt5-suffix", "mt5-enabled", "mt5-orders",
+        "mt5-server", "mt5-login", "mt5-suffix", "mt5-symbol-map", "mt5-enabled",
+        "mt5-orders",
         "btn-mt5-test", "btn-mt5-disable", "mt5-badge", "mt5-status", "mt5-error",
         "alerts-card", "alerts-form", "alert-url", "alert-format", "alert-level",
         "alert-enabled", "btn-alert-test", "btn-alert-disable", "alerts-badge",
@@ -78,6 +79,11 @@ class ConnectionsPanelTests(unittest.TestCase):
                 re.escape(f'$("{selector}").addEventListener(') + r'"([a-z]+)", ' + handler, APP)
             self.assertIsNotNone(binding, f"{selector} non relié à {handler}")
             self.assertIn(f"function {handler}", APP)
+
+    def test_symbol_map_parsing(self):
+        self.assertIn("function parseSymbolMap(text)", APP)
+        self.assertIn("symbol_map: parseSymbolMap(", APP)
+        self.assertIn("EURUSD=frxEURUSD", HTML)
 
     def test_panels_are_rendered_from_state(self):
         self.assertIn("renderConnections(state)", APP)

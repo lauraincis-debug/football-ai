@@ -22,7 +22,7 @@ from .connectors.mt5_bridge import Mt5BridgeConnector
 from .util import iso, now_utc
 
 FIELDS = ("enabled", "bridge_url", "bridge_token", "broker", "server", "login",
-          "password", "symbol_suffix", "allow_demo_orders")
+          "password", "symbol_suffix", "symbol_map", "allow_demo_orders")
 SECRET_FIELDS = ("bridge_token", "password")
 
 
@@ -36,7 +36,8 @@ class Mt5ConnectionStore:
         defaults: dict[str, Any] = {
             "enabled": False, "bridge_url": "", "bridge_token": "", "broker": "",
             "server": "", "login": "", "password": "", "symbol_suffix": "",
-            "allow_demo_orders": False, "last_test": None, "updated_at": None,
+            "symbol_map": {}, "allow_demo_orders": False, "last_test": None,
+            "updated_at": None,
         }
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -44,6 +45,8 @@ class Mt5ConnectionStore:
             return defaults
         if isinstance(data, dict):
             defaults.update({key: data[key] for key in data if key in defaults})
+        if not isinstance(defaults.get("symbol_map"), dict):
+            defaults["symbol_map"] = {}
         return defaults
 
     def save(self) -> None:
@@ -60,9 +63,40 @@ class Mt5ConnectionStore:
         self.config = payload
 
     # -- écriture --------------------------------------------------------
+    @staticmethod
+    def _clean_symbol_map(value: Any) -> dict[str, str]:
+        """Normalise la correspondance ``instrument canonique → symbole plateforme``."""
+        if value in (None, ""):
+            return {}
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "correspondance d'instruments invalide : attendu un objet JSON "
+                    '{"EURUSD": "frxEURUSD"}') from exc
+        if not isinstance(value, dict):
+            raise ValueError("correspondance d'instruments : objet JSON attendu")
+        if len(value) > 64:
+            raise ValueError("correspondance d'instruments : 64 entrées maximum")
+        cleaned: dict[str, str] = {}
+        for key, target in value.items():
+            name = str(key).strip().upper()
+            platform = str(target).strip()
+            if not name or not platform:
+                raise ValueError("correspondance d'instruments : entrée vide")
+            if len(name) > 24 or len(platform) > 40:
+                raise ValueError("correspondance d'instruments : nom trop long")
+            cleaned[name] = platform
+        return cleaned
+
     def configure(self, payload: dict[str, Any], *, activate: bool | None = None) -> dict[str, Any]:
         config = dict(self.config)
+        if "symbol_map" in payload:
+            config["symbol_map"] = self._clean_symbol_map(payload.get("symbol_map"))
         for key in FIELDS:
+            if key == "symbol_map":
+                continue
             if key not in payload or payload[key] is None:
                 continue
             value = payload[key]
@@ -125,6 +159,7 @@ class Mt5ConnectionStore:
             "server": config.get("server") or "",
             "login": config.get("login") or "",
             "symbol_suffix": config.get("symbol_suffix") or "",
+            "symbol_map": dict(config.get("symbol_map") or {}),
             "allow_demo_orders": bool(config.get("allow_demo_orders")),
             "last_test": config.get("last_test"),
             "updated_at": config.get("updated_at"),
@@ -151,6 +186,7 @@ class Mt5ConnectionStore:
             environment="DEMO", allow_orders=bool(config.get("allow_demo_orders")),
             broker=config.get("broker") or None, login=config.get("login") or None,
             symbol_suffix=config.get("symbol_suffix") or "",
+            symbol_map=dict(config.get("symbol_map") or {}),
         )
 
     def test(self) -> dict[str, Any]:

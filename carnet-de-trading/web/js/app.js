@@ -1116,6 +1116,8 @@ function renderConnections(state) {
   $("#mt5-server").value = mt5.server || "";
   $("#mt5-login").value = mt5.login || "";
   $("#mt5-suffix").value = mt5.symbol_suffix || "";
+  $("#mt5-symbol-map").value = Object.entries(mt5.symbol_map || {})
+    .map(([key, value]) => `${key}=${value}`).join(", ");
   $("#mt5-enabled").checked = Boolean(mt5.enabled);
   $("#mt5-orders").checked = Boolean(mt5.allow_demo_orders);
   const live = (state.connectors || []).find((entry) => entry && entry.kind === "mt5");
@@ -1154,6 +1156,21 @@ function renderConnections(state) {
   $("#alerts-status").textContent = alertBits.join(" · ");
 }
 
+function parseSymbolMap(text) {
+  const map = {};
+  String(text || "")
+    .split(/[,;\n]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .forEach((entry) => {
+      const [rawKey, ...rest] = entry.split(/[=:]/);
+      const key = (rawKey || "").trim().toUpperCase();
+      const value = rest.join("=").trim();
+      if (key && value) map[key] = value;
+    });
+  return map;
+}
+
 async function onSaveMt5(event) {
   event.preventDefault();
   const error = $("#mt5-error");
@@ -1165,6 +1182,7 @@ async function onSaveMt5(event) {
     server: $("#mt5-server").value.trim(),
     login: $("#mt5-login").value.trim(),
     symbol_suffix: $("#mt5-suffix").value.trim(),
+    symbol_map: parseSymbolMap($("#mt5-symbol-map").value),
     enabled: $("#mt5-enabled").checked,
     allow_demo_orders: $("#mt5-orders").checked,
   };
@@ -1187,6 +1205,8 @@ async function onTestMt5() {
   if ($("#mt5-url").value.trim()) payload.bridge_url = $("#mt5-url").value.trim();
   if ($("#mt5-token").value.trim()) payload.bridge_token = $("#mt5-token").value.trim();
   if ($("#mt5-suffix").value.trim()) payload.symbol_suffix = $("#mt5-suffix").value.trim();
+  const symbolMap = parseSymbolMap($("#mt5-symbol-map").value);
+  if (Object.keys(symbolMap).length) payload.symbol_map = symbolMap;
   try {
     const { result } = await api.testMt5(payload);
     if (result.ok) {

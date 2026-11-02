@@ -53,6 +53,7 @@ class Mt5BridgeConnector(BrokerConnector):
     def __init__(self, bridge_url: str, token: str, *, environment: str = "DEMO",
                  allow_orders: bool = False, broker: str | None = None,
                  login: int | str | None = None, symbol_suffix: str = "",
+                 symbol_map: dict[str, str] | None = None,
                  timeout: float = 8.0, transport=None):
         super().__init__(environment=environment)
         self.bridge_url = (bridge_url or "").rstrip("/")
@@ -61,6 +62,8 @@ class Mt5BridgeConnector(BrokerConnector):
         self.broker = broker or "MetaTrader 5"
         self.login = login
         self.symbol_suffix = symbol_suffix or ""
+        self.symbol_map = {str(key).upper(): str(value)
+                           for key, value in (symbol_map or {}).items()}
         self.timeout = timeout
         self.transport = transport or self._http
         self.account_kind = "unknown"
@@ -158,12 +161,22 @@ class Mt5BridgeConnector(BrokerConnector):
             raise ConnectorUnavailable("pont MT5 non connecté", "MT5_BRIDGE_DISCONNECTED")
 
     def _symbol(self, symbol: str) -> str:
-        return f"{symbol}{self.symbol_suffix}" if self.symbol_suffix else symbol
+        """Nom canonique → nom de la plateforme (correspondance explicite prioritaire)."""
+        name = str(symbol).strip()
+        mapped = self.symbol_map.get(name.upper())
+        if mapped:
+            return mapped
+        return f"{name}{self.symbol_suffix}" if self.symbol_suffix else name
 
     def _strip_symbol(self, symbol: str) -> str:
-        if self.symbol_suffix and symbol.upper().endswith(self.symbol_suffix.upper()):
-            return symbol[: -len(self.symbol_suffix)]
-        return symbol
+        """Nom de la plateforme → nom canonique (ex. ``frxEURUSD`` → ``EURUSD``)."""
+        platform = str(symbol)
+        by_platform = {str(value).upper(): key for key, value in self.symbol_map.items()}
+        if platform.upper() in by_platform:
+            return by_platform[platform.upper()]
+        if self.symbol_suffix and platform.upper().endswith(self.symbol_suffix.upper()):
+            return platform[: -len(self.symbol_suffix)]
+        return platform
 
     # -- compte, positions, ordres --------------------------------------
     def account(self) -> AccountSnapshot:
@@ -230,7 +243,14 @@ class Mt5BridgeConnector(BrokerConnector):
             return []
         payload = self._call("POST", "/quotes", {"symbols": [self._symbol(s) for s in symbols]})
         rows = payload.get("quotes") if isinstance(payload, dict) else None
-        return rows if isinstance(rows, list) else []
+        if not isinstance(rows, list):
+            return []
+        normalised = []
+        for row in rows:
+            if isinstance(row, dict) and row.get("symbol"):
+                row = {**row, "symbol": self._strip_symbol(str(row["symbol"]))}
+            normalised.append(row)
+        return normalised
 
     # -- ordres ----------------------------------------------------------
     def place_order(self, request: OrderRequest) -> OrderAck:

@@ -83,7 +83,8 @@ class FakeMT5:
         return []
 
     def symbol_info_tick(self, symbol):
-        prices = {"EURUSD.a": (1.08501, 1.08519), "BTCUSD": (64000.0, 64010.0)}
+        prices = {"EURUSD.a": (1.08501, 1.08519), "BTCUSD": (64000.0, 64010.0),
+                  "frxEURUSD": (1.08501, 1.08519), "cryBTCUSD": (64000.0, 64010.0)}
         if symbol not in prices:
             return None
         bid, ask = prices[symbol]
@@ -297,6 +298,34 @@ class Mt5ConnectorTests(unittest.TestCase):
         self.assertEqual(self.module.orders, [])
         self.assertTrue(connector.modify_order("777001", stop_price=Decimal("1.0810")))
 
+    def test_symbol_map_translates_both_ways(self):
+        # Nœud courtier sans suffixe (cas Deriv) : le mapping porte le renommage.
+        terminal, module = make_terminal(suffix="")
+        agent = AgentHarness(terminal)
+        self.addCleanup(agent.close)
+        connector = Mt5BridgeConnector(
+            agent.url, agent.token, symbol_map={"EURUSD": "frxEURUSD"},
+            allow_orders=True)
+        connector.connect()
+        quotes = connector.quotes(["EURUSD"])
+        self.assertEqual([q["symbol"] for q in quotes], ["EURUSD"])
+        self.assertEqual(float(quotes[0]["bid"]), 1.08501)
+        ack = connector.place_order(OrderRequest(
+            symbol="EURUSD", side="BUY", qty=Decimal("0.1"),
+            stop_price=Decimal("1.0800"), target_price=Decimal("1.0900"),
+            environment="DEMO"))
+        self.assertTrue(ack.platform_order_id)
+        self.assertEqual(module.calls[-1]["symbol"], "frxEURUSD")
+
+    def test_symbol_map_takes_priority_over_suffix(self):
+        connector = Mt5BridgeConnector(
+            self.agent.url, self.agent.token, symbol_suffix=".a",
+            symbol_map={"EURUSD": "frxEURUSD"})
+        self.assertEqual(connector._symbol("EURUSD"), "frxEURUSD")
+        self.assertEqual(connector._symbol("GBPUSD"), "GBPUSD.a")
+        self.assertEqual(connector._strip_symbol("frxEURUSD"), "EURUSD")
+        self.assertEqual(connector._strip_symbol("GBPUSD.a"), "GBPUSD")
+
     def test_to_dict_never_leaks_token(self):
         connector = self.connector()
         payload = json.dumps(connector.to_dict())
@@ -370,6 +399,24 @@ class Mt5StoreTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(result["code"])
 
+    def test_symbol_map_is_persisted_and_normalised(self):
+        self.store.configure({"bridge_url": "https://vps.exemple.fr", "bridge_token": "jeton",
+                              "symbol_map": {"eurusd": "frxEURUSD", " BTCUSDT ": "cryBTCUSD"}})
+        self.assertEqual(self.store.config["symbol_map"],
+                         {"EURUSD": "frxEURUSD", "BTCUSDT": "cryBTCUSD"})
+        self.assertEqual(Mt5ConnectionStore(self.path).public()["symbol_map"]["EURUSD"],
+                         "frxEURUSD")
+
+    def test_symbol_map_accepts_json_string(self):
+        self.store.configure({"bridge_url": "https://vps.exemple.fr", "bridge_token": "jeton",
+                              "symbol_map": '{"EURUSD": "frxEURUSD"}'})
+        self.assertEqual(self.store.config["symbol_map"], {"EURUSD": "frxEURUSD"})
+
+    def test_symbol_map_validation(self):
+        for invalid in ("pas du json", [], {"": "x"}, {"EURUSD": ""}, {str(i): "x" for i in range(70)}):
+            with self.assertRaises(ValueError):
+                self.store.configure({"symbol_map": invalid})
+
     def test_test_without_config(self):
         result = self.store.test()
         self.assertFalse(result["ok"])
@@ -383,6 +430,14 @@ class Mt5ApiTests(ApiTestCase):
         self.terminal, self.module = make_terminal()
         self.agent = AgentHarness(self.terminal)
         self.addCleanup(self.agent.close)
+
+    def test_symbol_map_roundtrip_through_api(self):
+        status, body = self.post("/api/connections/mt5", {
+            "bridge_url": self.agent.url, "bridge_token": self.agent.token,
+            "symbol_map": {"EURUSD": "frxEURUSD"}, "enabled": True}, self.token)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["mt5"]["symbol_map"], {"EURUSD": "frxEURUSD"})
+        self.assertNotIn(self.agent.token, json.dumps(body))
 
     def test_connections_overview(self):
         status, body = self.get("/api/connections", self.token)

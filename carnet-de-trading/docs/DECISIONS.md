@@ -167,7 +167,7 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 308 tests, 89 % global (5 314 instructions, 575 non couvertes),
+**Conséquences** : 315 tests, 89 % global (5 359 instructions, 563 non couvertes),
 98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
 installation.
 
@@ -217,3 +217,20 @@ tâche planifiée (jeton protégé par ACL). Un timer hebdomadaire exécute
 en-têtes de sécurité sont assurés par le proxy ; les mises à jour réutilisent la
 configuration existante. Les fichiers sont versionnés et testés statiquement
 (`tests/test_deploy_kit.py`) : aucune exécution de systemd/nginx dans la suite.
+
+## D20 — Correspondance d'instruments explicite plutôt qu'heuristique de préfixes
+
+**Contexte** : les courtiers renomment les symboles (Deriv : `frxEURUSD`,
+`cryBTCUSD`, `Volatility 100 Index` ; Exness : suffixes `.a`/`m` ; d'autres :
+`EURUSD_raw`). Le moteur, lui, raisonne sur des noms canoniques (`EURUSD`,
+`BTCUSDT`) liés à une fiche instrument (pip, contrat, marge).
+**Choix** : un suffixe global (`symbol_suffix`) pour les cas simples **et** une
+correspondance explicite `canonique → plateforme` stockée dans
+`var/mt5_connection.json`, appliquée dans les deux sens (cotations remontées en
+canonique, ordres transmis en nom plateforme). Aucune heuristique de préfixe
+implicite : un nom non déclaré est utilisé tel quel, ce qui échoue visiblement au
+lieu de trader un instrument inattendu.
+**Conséquences** : un courtier supplémentaire ne demande aucune modification de
+code, seulement une ligne de configuration ; en cas d'erreur de nom, le pont
+signale l'instrument inconnu côté terminal (`MT5_QUOTE_MISSING` /
+`MT5_UNKNOWN_SYMBOL`) sans ordre implicite.

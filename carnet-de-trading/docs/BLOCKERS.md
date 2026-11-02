@@ -116,6 +116,32 @@ mais aucune capture automatisée de régression visuelle.
 **Recommandation** : option 1 dès la mise en place de la CI ; d'ici là, la checklist
 manuelle de `docs/OPERATIONS.md` §6 couvre les parcours critiques.
 
+## B9 — Indices synthétiques (Deriv Volatility, Boom/Crash) non configurés
+
+**Constat** : le propriétaire détient un compte **Deriv** (démo visible : 7 487 USD,
+produit Rise/Fall sur `Volatility 100 (1s) Index`). Deriv propose deux familles :
+- **Deriv Trader / options** (Rise/Fall, durations en ticks, paiement fixe) : produit
+  à expiration, sans stop ni objectif, incompatible avec le moteur à bracket ;
+- **Deriv MT5** (Standard / swap-free) : compte démo MT5 classique, avec forex
+  (`frxEURUSD`), crypto (`cryBTCUSD`) et indices synthétiques (`Volatility 100 Index`,
+  `Boom/Crash`, `Step`), compatible avec le pont actuel après correspondance des noms.
+**Impact** : les 8 instruments actuels (5 FX + 3 crypto) peuvent être raccordés à un
+compte Deriv MT5 démo via la correspondance d'instruments. Les indices synthétiques
+ne sont **pas** dans `SYMBOLS` : pas de fiche instrument (tick, contrat, marge, lot
+minimum 0,001), donc ni calcul de risque ni backtest fiables.
+**Options**
+1. Rester sur FX/crypto du compte Deriv MT5 démo — aucun développement, validation
+   immédiate du pont.
+2. Ajouter un profil d'instrument synthétique (Volatility 100) avec specs minimales
+   et plafonds prudents (0,001 lot, 1 position) — développement court, mais le
+   backtest devra être refait (volatilité constante, pas de sessions).
+3. Connecter l'API WebSocket Deriv aux options Rise/Fall — hors périmètre : modèle
+   de règlement différent (paiement fixe, expiration en ticks), pas de stop/objectif,
+   réglementation variable selon les juridictions.
+**Recommandation** : option 1 pour valider le pont, puis option 2 si le propriétaire
+veut tester les synthétiques **en démo uniquement**. L'option 3 n'est pas retenue
+pour la V1 : elle exigerait un moteur de contrats distinct.
+
 ## B8 — Canal d'alerte prêt, aucune destination fournie
 
 **Constat** : §19.2 impose des notifications hors application. Le canal est
