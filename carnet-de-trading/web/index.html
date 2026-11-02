@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#090F1D" />
+<meta name="description" content="Carnet de Trading — plateforme de suivi, d'analyse et d'exécution contrôlée. Simulation, aucune donnée réelle." />
+<title>Carnet de Trading</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<a class="skip-link" href="#main">Aller au contenu</a>
+
+<div id="boot" class="boot-screen">
+  <div class="boot-mark">CDT</div>
+  <p>Chargement du terminal…</p>
+</div>
+
+<!-- Écran de connexion -->
+<section id="login-view" class="login-view hidden" aria-labelledby="login-title">
+  <div class="login-panel">
+    <div class="login-brand">
+      <div class="brand-mark">CDT</div>
+      <div>
+        <h1 id="login-title">Carnet de Trading</h1>
+        <p class="brand-sub">Terminal de suivi et d'exécution contrôlée</p>
+      </div>
+    </div>
+
+    <div class="notice notice-info" id="login-banner">
+      <strong>Environnement de démonstration.</strong>
+      <span>Aucun ordre réel, aucun fonds engagé. Les données affichées sont issues d'un marché simulé.</span>
+    </div>
+
+    <form id="login-form" class="stack" autocomplete="on" novalidate>
+      <label class="field">
+        <span>Identifiant</span>
+        <input type="text" id="login-username" name="username" autocomplete="username" required />
+      </label>
+      <label class="field">
+        <span>Mot de passe</span>
+        <input type="password" id="login-password" name="password" autocomplete="current-password" required />
+      </label>
+      <label class="field" id="login-code-field">
+        <span>Code MFA <em class="muted">(si activé)</em></span>
+        <input type="text" id="login-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block" id="login-submit">Se connecter</button>
+      <p class="form-error" id="login-error" role="alert"></p>
+    </form>
+
+    <ul class="login-facts">
+      <li>Moteur d'exécution côté serveur, jamais sur le téléphone.</li>
+      <li>Moteur de risque obligatoire avant chaque ordre.</li>
+      <li>Mode réel impossible : courtier et exchange non validés.</li>
+    </ul>
+    <p class="login-foot">Identifiants initiaux : <code>var/initial_credentials.txt</code> sur le serveur.</p>
+  </div>
+  <div class="login-visual" aria-hidden="true">
+    <canvas id="login-canvas"></canvas>
+    <div class="visual-caption">
+      <span class="dot dot-live"></span> Marché simulé — horloge accélérée
+    </div>
+  </div>
+</section>
+
+<!-- Application -->
+<div id="app-view" class="app hidden">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-btn" aria-label="Ouvrir la navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="brand">
+      <div class="brand-mark sm">CDT</div>
+      <div class="brand-text">
+        <strong>Carnet de Trading</strong>
+        <span class="brand-version" id="brand-version">v1.0</span>
+      </div>
+    </div>
+
+    <div class="env-strip" id="env-strip" role="status"></div>
+
+    <div class="topbar-actions">
+      <div class="kpi-inline">
+        <span class="kpi-label">Equity</span>
+        <strong class="mono" id="top-equity">—</strong>
+        <span class="delta mono" id="top-pnl">—</span>
+      </div>
+      <button class="btn btn-danger-ghost" id="btn-stop" title="Bloquer les nouvelles entrées et annuler les entrées en attente">
+        Arrêt trading
+      </button>
+      <button class="btn btn-danger" id="btn-liquidate" title="Demander la clôture de toutes les positions">
+        Liquidation
+      </button>
+      <button class="icon-btn" id="btn-notifications" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a5 5 0 0 0-5 5v3.6L5 15h14l-2-3.4V8a5 5 0 0 0-5-5Zm0 17a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 20Z"/></svg>
+        <span class="badge hidden" id="notif-badge">0</span>
+      </button>
+      <div class="user-menu">
+        <button class="user-chip" id="user-chip" aria-haspopup="true" aria-expanded="false">
+          <span class="avatar" id="user-avatar">?</span>
+          <span class="user-meta">
+            <strong id="user-name">—</strong>
+            <small id="user-role">—</small>
+          </span>
+        </button>
+        <div class="dropdown hidden" id="user-dropdown">
+          <button data-nav="settings">Paramètres &amp; sécurité</button>
+          <button id="btn-logout">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="shell">
+    <nav class="sidebar" id="sidebar" aria-label="Navigation principale">
+      <button class="nav-item active" data-nav="dashboard">
+        <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm10 8h8V11h-8v10ZM3 21h8v-6H3v6ZM13 9h8V3h-8v6Z"/></svg>
+        Tableau de bord
+      </button>
+      <button class="nav-item" data-nav="markets">
+        <svg viewBox="0 0 24 24"><path d="M4 19h16v2H4v-2Zm1-3h3V8H5v8Zm5 0h3V4h-3v12Zm5 0h3v-6h-3v6Z"/></svg>
+        Marchés
+      </button>
+      <button class="nav-item" data-nav="trading">
+        <svg viewBox="0 0 24 24"><path d="M3 17h18v2H3v-2Zm0-6h18v2H3v-2Zm0-6h18v2H3V5Z"/></svg>
+        Positions &amp; ordres
+      </button>
+      <button class="nav-item" data-nav="strategies">
+        <svg viewBox="0 0 24 24"><path d="M4 20h3v-6H4v6Zm6.5 0h3V4h-3v16ZM17 20h3v-9h-3v9Z"/></svg>
+        Stratégies &amp; backtest
+      </button>
+      <button class="nav-item" data-nav="risk">
+        <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3Zm0 5.7 1.4 3 3.1.3-2.4 2 .7 3-2.8-1.7-2.8 1.7.7-3-2.4-2 3.1-.3 1.4-3Z"/></svg>
+        Risque
+      </button>
+      <button class="nav-item" data-nav="journal">
+        <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5V3Zm2 4v2h8V7H7Zm0 4v2h8v-2H7Zm0 4v2h5v-2H7Z"/></svg>
+        Journal &amp; diagnostic
+      </button>
+      <button class="nav-item" data-nav="settings">
+        <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 4-.2 1.8 2 1.5-1.9 3.3-2.3-.9a8 8 0 0 1-1.6 1l-.3 2.4h-3.8l-.3-2.4a8 8 0 0 1-1.6-1l-2.3.9L4.8 15l2-1.5L6.6 12l.2-1.8-2-1.5 1.9-3.3 2.3.9a8 8 0 0 1 1.6-1L11 3h3.8l.3 2.4a8 8 0 0 1 1.6 1l2.3-.9 1.9 3.3-2 1.5.1.7Z"/></svg>
+        Paramètres
+      </button>
+      <div class="sidebar-foot">
+        <div class="sim-clock">
+          <span class="dot dot-live"></span>
+          <div>
+            <small>Horloge simulée</small>
+            <strong class="mono" id="sim-clock">—</strong>
+          </div>
+        </div>
+        <p class="sidebar-note" id="engine-note">moteur : —</p>
+      </div>
+    </nav>
+
+    <main id="main" class="main" tabindex="-1">
+      <!-- TABLEAU DE BORD -->
+      <section class="view" id="view-dashboard" aria-labelledby="h-dashboard">
+        <div class="view-head">
+          <div>
+            <h2 id="h-dashboard">Tableau de bord</h2>
+            <p class="view-sub" id="dash-sub">Vue consolidée des comptes, du risque et des connexions.</p>
+          </div>
+          <div class="view-actions">
+            <span class="pill" id="pill-entries">Entrées —</span>
+            <span class="pill" id="pill-recon">Réconciliation —</span>
+            <button class="btn btn-ghost" id="btn-refresh">Actualiser</button>
+          </div>
+        </div>
+
+        <div class="banner banner-sim" id="banner-main"></div>
+
+        <div class="grid kpi-grid">
+          <article class="card kpi">
+            <header>Equity <span class="muted">(devise du compte)</span></header>
+            <strong class="kpi-value mono" id="kpi-equity">—</strong>
+            <footer><span id="kpi-return" class="delta">—</span> depuis le capital initial</footer>
+          </article>
+          <article class="card kpi">
+            <header>P&amp;L net</header>
+            <strong class="kpi-value mono" id="kpi-pnl">—</strong>
+            <footer><span id="kpi-fees">—</span> de frais cumulés</footer>
+          </article>
+          <article class="card kpi">
+            <header>Risque ouvert</header>
+            <strong class="kpi-value mono" id="kpi-open-risk">—</strong>
+            <footer><span id="kpi-open-positions">—</span> positions ouvertes</footer>
+          </article>
+          <article class="card kpi">
+            <header>Marge libre</header>
+            <strong class="kpi-value mono" id="kpi-margin">—</strong>
+            <footer><span id="kpi-margin-level">—</span></footer>
+          </article>
+        </div>
+
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head">
+              <h3>Courbe d'equity</h3>
+              <span class="muted mono" id="equity-range">—</span>
+            </header>
+            <canvas id="chart-equity" class="chart" height="220"></canvas>
+          </article>
+          <article class="card">
+            <header class="card-head">
+              <h3>Limites de risque</h3>
+              <span class="muted">section 5</span>
+            </header>
+            <div class="limit-list" id="limit-list"></div>
+          </article>
+        </div>
+
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head">
+              <h3>Positions ouvertes</h3>
+              <span class="muted" id="positions-count">0</span>
+            </header>
+            <div class="table-wrap">
+              <table class="table" id="table-positions">
+                <thead><tr><th>Instrument</th><th>Sens</th><th class="num">Qté</th><th class="num">Entrée</th><th class="num">Stop</th><th class="num">Objectif</th><th class="num">P&amp;L latent</th><th>Protection</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card">
+            <header class="card-head">
+              <h3>Derniers signaux</h3>
+              <span class="muted">moteur de stratégie</span>
+            </header>
+            <div class="feed" id="signal-feed"></div>
+          </article>
+        </div>
+
+        <article class="card">
+          <header class="card-head">
+            <h3>Surveillance des marchés</h3>
+            <span class="muted">contrôle de fraîcheur ≤ 3 s · spread · session</span>
+          </header>
+          <div class="market-grid" id="market-grid"></div>
+        </article>
+      </section>
+
+      <!-- MARCHES -->
+      <section class="view hidden" id="view-markets" aria-labelledby="h-markets">
+        <div class="view-head">
+          <div>
+            <h2 id="h-markets">Marchés</h2>
+            <p class="view-sub">Données du marché simulé, contrôlées avant toute décision.</p>
+          </div>
+          <div class="view-actions">
+            <div class="segmented" id="tf-switch" role="group" aria-label="Unité de temps">
+              <button data-tf="1m">1 m</button>
+              <button data-tf="5m">5 m</button>
+              <button data-tf="15m" class="active">15 m</button>
+            </div>
+          </div>
+        </div>
+        <div class="banner banner-warn" id="banner-markets"></div>
+        <div class="market-layout">
+          <aside class="symbol-list card" id="symbol-list" aria-label="Instruments"></aside>
+          <div class="market-main">
+            <article class="card">
+              <header class="card-head">
+                <div>
+                  <h3 id="chart-title">—</h3>
+                  <span class="muted" id="chart-meta">—</span>
+                </div>
+                <div class="quote-line mono" id="chart-quote">—</div>
+              </header>
+              <canvas id="chart-candles" class="chart" height="360"></canvas>
+              <div class="chart-legend" id="chart-legend"></div>
+            </article>
+            <div class="grid two-col">
+              <article class="card">
+                <header class="card-head"><h3>Indicateurs</h3><span class="muted">calcul local</span></header>
+                <div class="kv-grid" id="indicator-grid"></div>
+              </article>
+              <article class="card">
+                <header class="card-head"><h3>Conditions de marché</h3><span class="muted">contrôles pré-ordre</span></header>
+                <div class="check-list" id="market-checks"></div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TRADING -->
+      <section class="view hidden" id="view-trading" aria-labelledby="h-trading">
+        <div class="view-head">
+          <div>
+            <h2 id="h-trading">Positions &amp; ordres</h2>
+            <p class="view-sub">Cycle de vie complet, exécutions et frais (section 11).</p>
+          </div>
+          <div class="view-actions">
+            <span class="pill" id="pill-orders">—</span>
+            <span class="pill" id="pill-fees">—</span>
+          </div>
+        </div>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Positions ouvertes</h3><span class="muted">protections hébergées</span></header>
+            <div class="table-wrap">
+              <table class="table" id="table-open-positions">
+                <thead><tr><th>Instrument</th><th>Sens</th><th class="num">Qté</th><th class="num">Entrée</th><th class="num">Stop</th><th class="num">Objectif</th><th class="num">P&amp;L</th><th>Stratégie</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Ordres récents</h3><span class="muted">états du cycle de vie</span></header>
+            <div class="table-wrap">
+              <table class="table" id="table-orders">
+                <thead><tr><th>Heure</th><th>Instrument</th><th>Sens</th><th class="num">Qté</th><th class="num">Exécuté</th><th>État</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+        <article class="card">
+          <header class="card-head">
+            <h3>Historique des transactions</h3>
+            <span class="muted">P&amp;L réalisé, frais, motif de clôture</span>
+          </header>
+          <div class="table-wrap">
+            <table class="table" id="table-history">
+              <thead><tr><th>Ouverture</th><th>Clôture</th><th>Instrument</th><th>Sens</th><th class="num">Qté</th><th class="num">Entrée</th><th class="num">Sortie</th><th class="num">P&amp;L net</th><th class="num">Frais</th><th>Motif</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- STRATEGIES -->
+      <section class="view hidden" id="view-strategies" aria-labelledby="h-strategies">
+        <div class="view-head">
+          <div>
+            <h2 id="h-strategies">Stratégies &amp; backtest</h2>
+            <p class="view-sub">Règles paramétrables, validation hors échantillon et robustesse (section 16).</p>
+          </div>
+        </div>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Stratégies</h3><span class="muted">une position par instrument</span></header>
+            <div class="strategy-list" id="strategy-list"></div>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Lancer un backtest</h3><span class="muted">coûts inclus</span></header>
+            <form id="backtest-form" class="stack">
+              <div class="field-row">
+                <label class="field"><span>Stratégie</span><select id="bt-strategy"></select></label>
+                <label class="field"><span>Unité de temps</span>
+                  <select id="bt-timeframe"><option value="5m">5 minutes</option><option value="15m" selected>15 minutes</option><option value="1m">1 minute</option></select>
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field"><span>Instruments</span><select id="bt-symbols" multiple size="4"></select></label>
+                <div class="field-col">
+                  <label class="field"><span>Bougies</span><input type="number" id="bt-bars" value="800" min="200" max="3000" step="100" /></label>
+                  <label class="field"><span>Risque par transaction (%)</span><input type="number" id="bt-risk" value="0.5" min="0.1" max="2" step="0.1" /></label>
+                </div>
+              </div>
+              <div class="field-row">
+                <label class="field"><span>Fenêtres walk-forward</span><input type="number" id="bt-wf" value="3" min="1" max="6" /></label>
+                <label class="field"><span>Simulations Monte-Carlo</span><input type="number" id="bt-mc" value="1000" min="0" max="5000" step="100" /></label>
+              </div>
+              <button class="btn btn-primary" type="submit" id="bt-submit">Lancer la simulation</button>
+              <p class="form-error" id="bt-error" role="alert"></p>
+            </form>
+          </article>
+        </div>
+        <article class="card hidden" id="bt-results">
+          <header class="card-head">
+            <h3>Résultats</h3>
+            <span class="muted" id="bt-stamp">—</span>
+          </header>
+          <div class="grid kpi-grid" id="bt-kpis"></div>
+          <div class="grid two-col">
+            <div>
+              <h4 class="sub-title">Courbe d'equity simulée</h4>
+              <canvas id="chart-backtest" class="chart" height="220"></canvas>
+            </div>
+            <div>
+              <h4 class="sub-title">Robustesse</h4>
+              <div class="kv-grid" id="bt-robustness"></div>
+              <h4 class="sub-title">Fenêtres hors échantillon</h4>
+              <div class="table-wrap">
+                <table class="table compact" id="table-wf">
+                  <thead><tr><th>Fenêtre</th><th class="num">Transactions</th><th class="num">Win rate</th><th class="num">P&amp;L net</th><th class="num">Max DD</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <h4 class="sub-title">Transactions simulées</h4>
+          <div class="table-wrap tall">
+            <table class="table compact" id="table-bt-trades">
+              <thead><tr><th>Entrée</th><th>Sortie</th><th>Instrument</th><th>Sens</th><th class="num">P&amp;L</th><th>Motif</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- RISQUE -->
+      <section class="view hidden" id="view-risk" aria-labelledby="h-risk">
+        <div class="view-head">
+          <div>
+            <h2 id="h-risk">Risque</h2>
+            <p class="view-sub">Politique versionnée, contrôles pré-ordre et validations de mise en production.</p>
+          </div>
+          <div class="view-actions"><span class="pill" id="pill-policy">version —</span></div>
+        </div>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Politique en vigueur</h3><span class="muted">modification propriétaire uniquement</span></header>
+            <div class="kv-grid" id="policy-grid"></div>
+            <details class="details">
+              <summary>Modifier la politique (réservé au propriétaire)</summary>
+              <form id="policy-form" class="stack">
+                <div class="field-row">
+                  <label class="field"><span>Paramètre</span><select id="policy-field"></select></label>
+                  <label class="field"><span>Nouvelle valeur</span><input type="text" id="policy-value" inputmode="decimal" /></label>
+                </div>
+                <label class="field"><span>Motif</span><input type="text" id="policy-reason" placeholder="ex. réduction du risque après revue" /></label>
+                <label class="field"><span>Jeton propriétaire</span><input type="password" id="policy-token" autocomplete="off" /></label>
+                <label class="field"><span>Phrase de confirmation</span><input type="text" id="policy-phrase" placeholder="JE CONFIRME CETTE DECISION PROPRIETAIRE" /></label>
+                <button type="submit" class="btn btn-danger-ghost">Appliquer la modification</button>
+                <p class="form-error" id="policy-error" role="alert"></p>
+              </form>
+            </details>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Décisions pré-ordre</h3><span class="muted">journal du moteur de risque</span></header>
+            <div class="decision-list" id="decision-list"></div>
+          </article>
+        </div>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Environnement &amp; mode réel</h3><span class="muted">section 24</span></header>
+            <div class="guard-box" id="guard-box"></div>
+            <div class="validations" id="validations"></div>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Exposition</h3><span class="muted">par instrument et par groupe</span></header>
+            <div class="exposure" id="exposure"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- JOURNAL -->
+      <section class="view hidden" id="view-journal" aria-labelledby="h-journal">
+        <div class="view-head">
+          <div>
+            <h2 id="h-journal">Journal &amp; diagnostic</h2>
+            <p class="view-sub">Journal chaîné, réconciliations, sauvegardes et santé du service.</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btn-verify-journal">Vérifier l'intégrité</button>
+            <button class="btn btn-ghost" id="btn-reconcile">Réconcilier</button>
+            <button class="btn btn-ghost" id="btn-backup">Sauvegarder</button>
+          </div>
+        </div>
+        <div class="grid three-col" id="diag-cards"></div>
+        <article class="card">
+          <header class="card-head">
+            <h3>Journal d'événements</h3>
+            <div class="filters">
+              <select id="journal-level">
+                <option value="">Tous niveaux</option>
+                <option value="INFO">INFO et plus</option>
+                <option value="WARNING">WARNING et plus</option>
+                <option value="ERROR">ERROR et plus</option>
+                <option value="CRITICAL">CRITICAL</option>
+              </select>
+              <input type="search" id="journal-search" placeholder="filtrer…" />
+            </div>
+          </header>
+          <div class="log-list" id="log-list"></div>
+        </article>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Réconciliations</h3><span class="muted">état local ↔ plateforme</span></header>
+            <div class="table-wrap">
+              <table class="table compact" id="table-recon"><thead><tr><th>Heure</th><th>Statut</th><th class="num">Durée</th><th>Détail</th></tr></thead><tbody></tbody></table>
+            </div>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Sauvegardes</h3><span class="muted">chiffrées, vérifiées</span></header>
+            <div class="table-wrap">
+              <table class="table compact" id="table-backups"><thead><tr><th>Nom</th><th class="num">Taille</th><th>Chiffrée</th><th></th></tr></thead><tbody></tbody></table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- PARAMETRES -->
+      <section class="view hidden" id="view-settings" aria-labelledby="h-settings">
+        <div class="view-head">
+          <div>
+            <h2 id="h-settings">Paramètres &amp; sécurité</h2>
+            <p class="view-sub">Compte, authentification forte, sessions et rôles (sections 17 et 18).</p>
+          </div>
+        </div>
+        <div class="grid two-col">
+          <article class="card">
+            <header class="card-head"><h3>Mon compte</h3><span class="muted" id="settings-role">—</span></header>
+            <div class="kv-grid" id="account-grid"></div>
+            <h4 class="sub-title">Changer de mot de passe</h4>
+            <form id="password-form" class="stack">
+              <label class="field"><span>Mot de passe actuel</span><input type="password" id="pwd-current" autocomplete="current-password" /></label>
+              <label class="field"><span>Nouveau mot de passe</span><input type="password" id="pwd-new" autocomplete="new-password" /></label>
+              <label class="field"><span>Code MFA (si activé)</span><input type="text" id="pwd-code" inputmode="numeric" maxlength="6" /></label>
+              <button class="btn btn-ghost" type="submit">Mettre à jour</button>
+              <p class="form-error" id="pwd-error" role="alert"></p>
+            </form>
+          </article>
+          <article class="card">
+            <header class="card-head"><h3>Authentification multifacteur</h3><span class="muted">TOTP</span></header>
+            <div id="mfa-box" class="stack">
+              <p class="muted">Activez un second facteur pour les actions sensibles.</p>
+              <button class="btn btn-ghost" id="btn-mfa-setup">Générer un secret</button>
+              <div id="mfa-setup" class="hidden">
+                <p class="mono secret" id="mfa-secret"></p>
+                <p class="muted small">Ajoutez ce secret dans votre application d'authentification, puis saisissez un code.</p>
+                <div class="field-row">
+                  <label class="field"><span>Code à 6 chiffres</span><input type="text" id="mfa-code" inputmode="numeric" maxlength="6" /></label>
+                  <button class="btn btn-primary" id="btn-mfa-enable">Activer</button>
+                </div>
+              </div>
+              <p class="form-error" id="mfa-error" role="alert"></p>
+            </div>
+            <h4 class="sub-title">Sessions actives</h4>
+            <div class="session-list" id="session-list"></div>
+          </article>
+        </div>
+        <article class="card">
+          <header class="card-head"><h3>Plateformes &amp; connexions</h3><span class="muted">sélection non figée (section 26)</span></header>
+          <div class="platforms" id="platforms"></div>
+          <p class="muted small" style="margin-top:.7rem">
+            Le passage en environnement réel exige la sélection du courtier et de l'exchange,
+            les trois validations de la section 24 et une activation propriétaire. Tant que ces
+            conditions ne sont pas réunies, le bouton reste bloqué par construction.
+          </p>
+          <div class="field-row" style="margin-top:.7rem">
+            <button class="btn btn-ghost" id="btn-env-sim" disabled>Environnement : simulation</button>
+            <button class="btn btn-danger-ghost" id="btn-env-demo" disabled>Passer en démo (indisponible)</button>
+          </div>
+        </article>
+
+        <div class="grid two-col" id="connections-grid">
+          <article class="card" id="mt5-card">
+            <header class="card-head"><h3>Connexion MetaTrader 5 (démo)</h3><span class="muted" id="mt5-badge">non configurée</span></header>
+            <p class="muted small">
+              Le terminal MT5 tourne sur un nœud Windows isolé ; le VPS l'interroge via
+              l'agent <span class="mono">scripts/mt5_agent.py</span> (jeton partagé, tunnel ou TLS).
+              Seuls les comptes <strong>démo</strong> sont acceptés : un compte réel est refusé à la connexion.
+            </p>
+            <form id="mt5-form" class="stack">
+              <label class="field"><span>URL de l'agent (https://… ou tunnel SSH)</span><input type="url" id="mt5-url" placeholder="https://mt5.exemple.fr:8787" autocomplete="off" /></label>
+              <label class="field"><span>Jeton du pont <em class="muted">(vide = conserver)</em></span><input type="password" id="mt5-token" autocomplete="new-password" /></label>
+              <div class="field-row">
+                <label class="field"><span>Courtier</span><input type="text" id="mt5-broker" autocomplete="off" /></label>
+                <label class="field"><span>Serveur</span><input type="text" id="mt5-server" autocomplete="off" /></label>
+              </div>
+              <div class="field-row">
+                <label class="field"><span>Login du compte démo</span><input type="text" id="mt5-login" inputmode="numeric" autocomplete="off" /></label>
+                <label class="field"><span>Suffixe d'instrument</span><input type="text" id="mt5-suffix" placeholder=".a" autocomplete="off" /></label>
+              </div>
+              <label class="field"><span>Correspondance d'instruments (optionnel)</span><input type="text" id="mt5-symbol-map" placeholder="EURUSD=frxEURUSD, BTCUSDT=cryBTCUSD" autocomplete="off" /></label>
+              <p class="muted small" id="mt5-symbol-map-help">
+                À renseigner si le courtier renomme les instruments (Deriv : <span class="mono">frxEURUSD</span>,
+                <span class="mono">cryBTCUSD</span>). Format <span class="mono">CANONIQUE=PLATEFORME</span>,
+                séparés par des virgules. Laissez vide si les noms sont identiques.
+              </p>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-enabled" /> <span>Activer le pont (redémarrage du service requis)</span></label>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="mt5-orders" /> <span>Autoriser l'envoi d'ordres <strong>démo</strong> (bracket obligatoire)</span></label>
+              <div class="field-row">
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+                <button class="btn btn-ghost" type="button" id="btn-mt5-test">Tester la connexion</button>
+              </div>
+              <button class="btn btn-danger-ghost" type="button" id="btn-mt5-disable">Désactiver le pont</button>
+              <p class="muted small" id="mt5-status">—</p>
+              <details class="details" id="mt5-instruments-box">
+                <summary>Instruments du terminal (après un test)</summary>
+                <div class="muted small" id="mt5-instruments">—</div>
+              </details>
+              <p class="form-error" id="mt5-error" role="alert"></p>
+            </form>
+          </article>
+          <article class="card" id="alerts-card">
+            <header class="card-head"><h3>Canal d'alerte</h3><span class="muted" id="alerts-badge">non configuré</span></header>
+            <p class="muted small">
+              Notifications sortantes (Slack, Discord, Teams ou webhook générique) pour les
+              alertes critiques : kill-switch, dépassement de limites, réconciliation rompue,
+              pont indisponible. Aucun secret n'est jamais renvoyé par l'API.
+            </p>
+            <form id="alerts-form" class="stack">
+              <label class="field"><span>URL du webhook</span><input type="url" id="alert-url" placeholder="https://hooks.slack.com/services/…" autocomplete="off" /></label>
+              <div class="field-row">
+                <label class="field"><span>Format</span><select id="alert-format">
+                  <option value="auto">Détection automatique</option>
+                  <option value="slack">Slack</option>
+                  <option value="discord">Discord</option>
+                  <option value="teams">Microsoft Teams</option>
+                  <option value="generic">Générique (JSON)</option>
+                </select></label>
+                <label class="field"><span>Niveau minimum</span><select id="alert-level">
+                  <option value="WARNING">Avertissement</option>
+                  <option value="CRITICAL">Critique</option>
+                  <option value="INFO">Information</option>
+                </select></label>
+              </div>
+              <label class="field" style="flex-direction:row;align-items:center;gap:.5rem"><input type="checkbox" id="alert-enabled" /> <span>Activer l'envoi des alertes</span></label>
+              <div class="field-row">
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+                <button class="btn btn-ghost" type="button" id="btn-alert-test">Envoyer un test</button>
+              </div>
+              <button class="btn btn-danger-ghost" type="button" id="btn-alert-disable">Désactiver</button>
+              <p class="muted small" id="alerts-status">—</p>
+              <p class="form-error" id="alerts-error" role="alert"></p>
+            </form>
+          </article>
+        </div>
+
+        <article class="card" id="users-card">
+          <header class="card-head"><h3>Utilisateurs</h3><span class="muted">administrateur</span></header>
+          <div class="table-wrap">
+            <table class="table compact" id="table-users"><thead><tr><th>Identifiant</th><th>Rôle</th><th>MFA</th><th class="num">Sessions</th><th></th></tr></thead><tbody></tbody></table>
+          </div>
+          <details class="details">
+            <summary>Créer un utilisateur</summary>
+            <form id="user-form" class="stack">
+              <div class="field-row">
+                <label class="field"><span>Identifiant</span><input type="text" id="user-name-input" required /></label>
+                <label class="field"><span>Rôle</span><select id="user-role-input"><option>VIEWER</option><option>OPERATOR</option><option>ADMIN</option></select></label>
+              </div>
+              <label class="field"><span>Mot de passe provisoire</span><input type="password" id="user-password-input" autocomplete="new-password" /></label>
+              <button class="btn btn-ghost" type="submit">Créer</button>
+              <p class="form-error" id="user-error" role="alert"></p>
+            </form>
+          </details>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>À propos</h3><span class="muted" id="about-version"></span></header>
+          <div class="about" id="about-box"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span id="status-engine">moteur —</span>
+    <span id="status-db">base —</span>
+    <span id="status-recon">réconciliation —</span>
+    <span id="status-notif">alertes —</span>
+    <span class="spacer"></span>
+    <span id="status-time">—</span>
+  </footer>
+</div>
+
+<!-- Panneau de notifications -->
+<aside class="drawer hidden" id="notification-drawer" aria-label="Notifications" aria-hidden="true">
+  <header class="drawer-head">
+    <h3>Alertes &amp; notifications</h3>
+    <button class="icon-btn" id="btn-close-drawer" aria-label="Fermer">✕</button>
+  </header>
+  <div class="drawer-body" id="notification-list"></div>
+  <footer class="drawer-foot">
+    <button class="btn btn-ghost btn-block" id="btn-mark-read">Tout marquer comme lu</button>
+  </footer>
+</aside>
+<div class="overlay hidden" id="overlay"></div>
+
+<!-- Boîte de confirmation -->
+<dialog id="confirm-dialog" class="dialog">
+  <form method="dialog" class="stack">
+    <h3 id="confirm-title">Confirmation</h3>
+    <p id="confirm-text"></p>
+    <label class="field" id="confirm-input-wrap">
+      <span id="confirm-input-label">Saisissez le mot de confirmation</span>
+      <input type="text" id="confirm-input" autocomplete="off" />
+    </label>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" value="cancel" id="confirm-cancel">Annuler</button>
+      <button class="btn btn-danger" value="ok" id="confirm-ok">Confirmer</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

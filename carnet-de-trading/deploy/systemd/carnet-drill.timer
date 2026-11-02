@@ -1,0 +1,11 @@
+[Unit]
+Description=Carnet de Trading — exercice de restauration hebdomadaire
+
+[Timer]
+OnCalendar=Sun 04:30
+Persistent=true
+RandomizedDelaySec=900
+Unit=carnet-drill.service
+
+[Install]
+WantedBy=timers.target

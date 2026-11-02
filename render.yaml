@@ -1,0 +1,44 @@
+# Hébergement permanent le plus simple (Render, offre gratuite)
+#
+# 1. pousser ce fichier sur la branche main du dépôt ;
+# 2. render.com → New → Blueprint → sélectionner le dépôt ;
+# 3. Render lit ce fichier, construit l'image Docker et publie une URL HTTPS.
+#
+# Limites de l'offre gratuite : l'instance s'endort après ~15 min sans visite
+# (réveil ~1 min), et le disque est éphémère — la base est réinitialisée à chaque
+# redéploiement. Pour conserver les données : disque persistant (offre payante).
+#
+# Cette configuration ne permet AUCUN ordre réel : CARNET_ALLOW_REAL=0 et le code
+# refuse le mode réel par construction. Le pont MT5 reste impossible sur Linux.
+
+services:
+  - type: web
+    name: carnet-de-trading
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerContext: ./carnet-de-trading
+    dockerfilePath: ./carnet-de-trading/Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: CARNET_ENV
+        value: SIMULATION
+      - key: CARNET_SIM_SPEED
+        value: "60"
+      - key: CARNET_SIM_24_7
+        value: "1"
+      - key: CARNET_TICK_SECONDS
+        value: "1.0"
+      - key: CARNET_ALLOW_REAL
+        value: "0"
+      - key: CARNET_DATA_DIR
+        value: /app/data
+      - key: CARNET_VAR_DIR
+        value: /app/var
+      - key: CARNET_BACKUP_DIR
+        value: /app/var/backups
+      # Mot de passe administrateur généré par Render : visible dans le tableau
+      # de bord (Environment), à changer dans l'application après la 1re connexion.
+      - key: CARNET_ADMIN_PASSWORD
+        generateValue: true

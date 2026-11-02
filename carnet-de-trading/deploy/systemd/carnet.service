@@ -1,0 +1,48 @@
+[Unit]
+Description=Carnet de Trading — plateforme de suivi et d'exécution contrôlée (simulation / démo MT5)
+Documentation=file:/opt/carnet/docs/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=carnet
+Group=carnet
+WorkingDirectory=/opt/carnet
+EnvironmentFile=/etc/carnet/carnet.env
+Environment=PYTHONPATH=/opt/carnet/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/carnet/venv/bin/python -m carnet.server --host 127.0.0.1 --port 8080
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+LimitNOFILE=8192
+
+# Durcissement : le service n'a besoin que de ses données et du réseau.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+StateDirectory=carnet
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/carnet
+
+[Install]
+WantedBy=multi-user.target

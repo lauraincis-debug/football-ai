@@ -1,0 +1,16 @@
+[Unit]
+Description=Carnet de Trading — exercice de restauration hebdomadaire (backup drill)
+Documentation=file:/opt/carnet/docs/OPERATIONS.md
+After=carnet.service
+
+[Service]
+Type=oneshot
+User=carnet
+Group=carnet
+WorkingDirectory=/opt/carnet
+EnvironmentFile=/etc/carnet/carnet.env
+Environment=PYTHONPATH=/opt/carnet/backend
+ExecStart=/opt/carnet/venv/bin/python /opt/carnet/scripts/backup.py drill
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

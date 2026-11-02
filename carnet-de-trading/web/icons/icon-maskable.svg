@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Carnet de Trading">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0C1526"/>
+      <stop offset="1" stop-color="#091020"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#29D6CF"/>
+      <stop offset="1" stop-color="#1779A8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path d="M112 336 L168 296 L216 316 L268 244 L320 274 L376 200 L408 220"
+        fill="none" stroke="url(#accent)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="408" cy="220" r="17" fill="#20D6A0"/>
+  <text x="256" y="430" text-anchor="middle" fill="#E8EFF9" font-family="Inter, system-ui, sans-serif"
+        font-size="84" font-weight="700" letter-spacing="6">CDT</text>
+</svg>
