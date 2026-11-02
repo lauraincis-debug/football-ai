@@ -167,6 +167,38 @@ class WindowsAgentInstallerTests(unittest.TestCase):
         self.assertIn("comptes démo", self.text)
 
 
+class HostingKitTests(unittest.TestCase):
+    """Hébergement permanent simple : image Docker et blueprint Render."""
+
+    def test_dockerfile_is_self_contained_and_safe(self):
+        text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("FROM python:3.12-slim", text)
+        self.assertIn("EXPOSE 8080", text)
+        self.assertIn("CARNET_ALLOW_REAL=0", text)
+        self.assertIn("USER carnet", text)
+        self.assertIn("HEALTHCHECK", text)
+        self.assertIn("/api/health", text)
+        self.assertIn("${PORT:-8080}", text)
+        # Aucune dépendance tierce : pas de pip install.
+        self.assertNotIn("pip install", text)
+
+    def test_render_blueprint_targets_the_app_subdirectory(self):
+        blueprint = (ROOT.parent / "render.yaml").read_text(encoding="utf-8")
+        self.assertIn("dockerContext: ./carnet-de-trading", blueprint)
+        self.assertIn("dockerfilePath: ./carnet-de-trading/Dockerfile", blueprint)
+        self.assertIn("healthCheckPath: /api/health", blueprint)
+        self.assertIn("plan: free", blueprint)
+        self.assertIn("CARNET_ALLOW_REAL", blueprint)
+        self.assertIn('value: "0"', blueprint)
+        self.assertIn("generateValue: true", blueprint)
+
+    def test_hosting_guide_states_limits(self):
+        text = (ROOT / "docs" / "HOSTING_SIMPLE.md").read_text(encoding="utf-8")
+        for needle in ("Render", "CARNET_ADMIN_PASSWORD", "Disque éphémère",
+                       "Ne débloque pas Deriv", "CARNET_ALLOW_REAL=0"):
+            self.assertIn(needle, text)
+
+
 class DeploymentDocTests(unittest.TestCase):
     def setUp(self):
         self.text = (ROOT / "docs" / "DEPLOYMENT.md").read_text(encoding="utf-8")
