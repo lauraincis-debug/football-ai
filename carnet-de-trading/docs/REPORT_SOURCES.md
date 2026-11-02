@@ -53,14 +53,14 @@ sont originales et testées contre des doublures locales.
 
 | Vérification | Méthode | Résultat |
 |---|---|---|
-| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **308 tests OK** |
+| Suite de tests | `PYTHONPATH=backend:tests python3 -m unittest discover -s tests -p 'test_*.py'` | **317 tests OK** |
 | Couverture | `coverage run` (venv jetable hors dépôt) puis `coverage report` | **89 % global**, risque 98 %, ordres 98 % |
 | Compilation | `python3 -m compileall backend/carnet` | aucune erreur |
 | Cohérence interface | script d'audit : identifiants HTML vs références JS, vues vs navigation vs rendus | 164 identifiants, 134 références, **0 manquante**, 7/7/7 |
 | Démarrage service | `scripts/run.sh` puis `GET /api/health`, `/api/state` | `ok: true`, réconciliation `OK`, cotations fraîches |
 | Sauvegarde/restauration | `scripts/backup.py create/verify/drill` | création et exercice de restauration réussis |
 | Journal chaîné | `POST /api/journal/verify` | `ok: true` |
-| Pont MT5 démo | agent réel + terminal factice, `tests/test_mt5.py` (35 cas) | compte réel refusé, bracket obligatoire, timeout ⇒ statut inconnu |
+| Pont MT5 démo | agent réel + terminal factice, `tests/test_mt5.py` (44 cas) | compte réel refusé, bracket obligatoire, timeout ⇒ statut inconnu, correspondance d'instruments |
 | Canal d'alerte | `tests/test_alerts.py` (20 cas, transport factice) | formats Slack/Discord/Teams/générique, 3 réessais, URL masquée |
 | Kit de déploiement | `tests/test_deploy_kit.py` (19 cas) + `bash -n` | unité durcie, TLS moderne, scripts idempotents |
 

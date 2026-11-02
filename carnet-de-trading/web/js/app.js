@@ -1210,9 +1210,14 @@ async function onTestMt5() {
   try {
     const { result } = await api.testMt5(payload);
     if (result.ok) {
+      const symbols = result.symbols || {};
+      const missing = symbols.missing || [];
+      const instruments = missing.length
+        ? ` · instruments non reconnus : ${missing.join(", ")}`
+        : ` · ${(symbols.matched || []).length}/${(symbols.checked || []).length} instruments reconnus`;
       toast("Pont MT5 joignable",
         `compte ${result.account?.account_id || "—"} · ${result.quotes_received} cotation(s) · `
-        + `${result.orders_enabled ? "ordres démo actifs" : "ordres désactivés"}`, "ok");
+        + `${result.orders_enabled ? "ordres démo actifs" : "ordres désactivés"}${instruments}`, "ok");
     } else {
       toast("Test MT5 échoué", `${result.code || ""} ${result.detail || ""}`.trim(), "bad");
     }

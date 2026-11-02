@@ -237,6 +237,37 @@ class Mt5BridgeConnector(BrokerConnector):
         rows = self._call("GET", f"/history{query}")
         return rows if isinstance(rows, list) else []
 
+    def symbols(self) -> list[dict[str, Any]]:
+        """Liste des instruments du terminal (diagnostic des correspondances)."""
+        self._require()
+        payload = self._call("GET", "/symbols")
+        rows = payload.get("symbols") if isinstance(payload, dict) else payload
+        return rows if isinstance(rows, list) else []
+
+    def resolve_symbols(self, canonical: list[str]) -> dict[str, Any]:
+        """Compare nos noms canoniques aux instruments réellement proposés."""
+        try:
+            rows = self.symbols()
+        except ConnectorError as exc:
+            return {"ok": False, "error": str(exc), "checked": list(canonical),
+                    "matched": [], "missing": list(canonical), "available_count": 0}
+        available = {str(row.get("name", "")).upper(): row for row in rows
+                     if isinstance(row, dict)}
+        matched: list[dict[str, str]] = []
+        missing: list[str] = []
+        for name in canonical:
+            platform = self._symbol(name)
+            if platform.upper() in available:
+                matched.append({"canonical": name, "platform": platform})
+            else:
+                missing.append(name)
+        return {
+            "ok": True, "checked": list(canonical), "matched": matched,
+            "missing": missing, "available_count": len(available),
+            "suffix": self.symbol_suffix or None,
+            "map": dict(self.symbol_map),
+        }
+
     def quotes(self, symbols) -> list[dict[str, Any]]:
         """Cotations temps réel du terminal (facultatif, voir README §Dialogue MT5)."""
         if not self._connected:

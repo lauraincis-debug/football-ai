@@ -194,6 +194,8 @@ class Mt5ConnectionStore:
         if not self.config.get("bridge_url"):
             return {"ok": False, "code": "MT5_BRIDGE_MISSING",
                     "detail": "aucun pont MT5 configuré"}
+        from .config import SYMBOLS
+
         connector = self.build_connector()
         try:
             connector.connect()
@@ -209,6 +211,7 @@ class Mt5ConnectionStore:
                 "positions": len(positions), "open_orders": len(orders),
                 "quotes_received": len(quotes), "orders_enabled": connector.allow_orders,
                 "account_kind": connector.account_kind,
+                "symbols": connector.resolve_symbols(list(SYMBOLS)),
                 "terminal": connector.terminal,
             }
         except (ConnectorError, ValueError) as exc:

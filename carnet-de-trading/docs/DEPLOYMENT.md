@@ -268,6 +268,13 @@ Puis `systemctl enable --now carnet-mt5-tunnel`.
 | Activer le pont | requis pour que le moteur utilise le terminal |
 | Autoriser les ordres démo | désactivé par défaut ; bracket obligatoire |
 
+Le bouton « Tester la connexion » interroge aussi `GET /symbols` de l'agent et
+compare les 8 instruments canoniques aux noms réellement proposés par le terminal.
+Le résultat (`symbols.matched`, `symbols.missing`) indique exactement quoi corriger :
+un instrument manquant n'empêche pas le pont de fonctionner — il est simplement
+ignoré par le moteur, sans cotation — mais il vaut mieux aligner la correspondance
+avant d'activer les ordres.
+
 Testez d'abord avec « Tester la connexion » (aucun enregistrement), puis
 enregistrez et **redémarrez le service** : le moteur charge le pont au
 démarrage. L'interface affiche « redémarrage requis » tant que ce n'est pas fait.

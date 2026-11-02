@@ -18,6 +18,7 @@ Sécurité :
 Routes (JSON) :
     GET  /health                         état du terminal et type de compte
     GET  /account                        solde, équité, marge
+    GET  /symbols                        instruments proposés par le terminal
     GET  /positions                      positions ouvertes
     GET  /orders                         ordres en attente
     GET  /orders/<ticket>                état d'un ordre
@@ -185,6 +186,20 @@ class Terminal:
                 pass
         rows = self.require().history_deals_get(start, dt.datetime.now(dt.timezone.utc)) or []
         return [d._asdict() if hasattr(d, "_asdict") else dict(d) for d in rows]
+
+    def symbols(self) -> list[dict[str, Any]]:
+        """Instruments proposés par le terminal (pour diagnostiquer les noms)."""
+        rows = self.require().symbols_get() or []
+        out = []
+        for item in rows:
+            data = item._asdict() if hasattr(item, "_asdict") else dict(item)
+            out.append({
+                "name": str(data.get("name") or ""),
+                "path": str(data.get("path") or ""),
+                "visible": bool(data.get("visible", False)),
+                "trade_mode": int(data.get("trade_mode", 0) or 0),
+            })
+        return out
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         module = self.require()
@@ -419,6 +434,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return terminal.positions()
         if method == "GET" and segments == ["orders"]:
             return terminal.orders()
+        if method == "GET" and segments == ["symbols"]:
+            return {"symbols": terminal.symbols()}
         if method == "GET" and segments == ["history"]:
             since = (query.get("since") or [None])[0]
             return terminal.history(since)

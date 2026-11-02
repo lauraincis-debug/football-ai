@@ -90,6 +90,11 @@ class FakeMT5:
         bid, ask = prices[symbol]
         return {"bid": bid, "ask": ask, "last": bid, "volume": 10.0, "time": int(time.time())}
 
+    def symbols_get(self, *args, **kwargs):
+        names = ["EURUSD.a", "GBPUSD.a", "USDJPY.a", "AUDUSD.a", "USDCAD.a", "BTCUSD"]
+        return [{"name": name, "path": f"Forex\\{name}", "visible": True, "trade_mode": 4}
+                for name in names]
+
     def symbol_info(self, symbol):
         return {"filling_mode": 2, "digits": 5}
 
@@ -298,6 +303,21 @@ class Mt5ConnectorTests(unittest.TestCase):
         self.assertEqual(self.module.orders, [])
         self.assertTrue(connector.modify_order("777001", stop_price=Decimal("1.0810")))
 
+    def test_symbol_resolution_reports_missing_instruments(self):
+        connector = self.connector()
+        connector.connect()
+        report = connector.resolve_symbols(["EURUSD", "BTCUSDT", "SOLUSDT"])
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["available_count"], 6)
+        self.assertEqual([row["canonical"] for row in report["matched"]], ["EURUSD"])
+        self.assertEqual(report["matched"][0]["platform"], "EURUSD.a")
+        self.assertEqual(report["missing"], ["BTCUSDT", "SOLUSDT"])
+
+    def test_symbol_listing_requires_connection(self):
+        connector = self.connector()
+        with self.assertRaises(ConnectorUnavailable):
+            connector.symbols()
+
     def test_symbol_map_translates_both_ways(self):
         # Nœud courtier sans suffixe (cas Deriv) : le mapping porte le renommage.
         terminal, module = make_terminal(suffix="")
@@ -391,6 +411,10 @@ class Mt5StoreTests(unittest.TestCase):
         self.assertEqual(result["positions"], 1)
         self.assertEqual(result["account_kind"], "demo")
         self.assertFalse(result["orders_enabled"])
+        self.assertTrue(result["symbols"]["ok"])
+        self.assertNotIn("EURUSD", result["symbols"]["missing"])  # suffixe .a appliqué
+        self.assertIn("BTCUSDT", result["symbols"]["missing"])
+        self.assertEqual(result["symbols"]["available_count"], 6)
         self.assertTrue(self.store.config["last_test"]["ok"])
 
     def test_test_reports_failure(self):

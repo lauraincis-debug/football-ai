@@ -264,7 +264,7 @@ Preuves : `test_core.py::SecurityTests` (hachage, TOTP, sessions, rôles, rate l
 
 | Seuil §21.3 | Exigé | Mesuré |
 |---|---|---|
-| Couverture globale | ≥ 80 % | **89 %** (5 359 instructions, 563 non couvertes) |
+| Couverture globale | ≥ 80 % | **89 %** (5 379 instructions, 565 non couvertes) |
 | Couverture risque + ordres | ≥ 95 % | **98 %** risque, **98 %** ordres |
 | Scénarios critiques | 100 % | 100 % (voir tableau ci-dessous) |
 | Ordres dupliqués en test | 0 | 0 (`test_duplicate_client_order_is_not_executed_twice`) |
@@ -359,5 +359,5 @@ pont MT5 démo et canal d'alerte externe, kit de déploiement systemd/TLS.
 - Exigences dépendant d'un tiers : **7 blocages** documentés (`BLOCKERS.md`),
   chacun avec options et recommandation — aucun ne bloque l'usage de la V1 en
   simulation.
-- 315 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 89 %
-  (5 359 instructions, 563 non couvertes).
+- 317 tests automatisés, 0 ordre réel, 0 ordre dupliqué, couverture 89 %
+  (5 379 instructions, 565 non couvertes).

@@ -48,7 +48,7 @@ source d'exécution, rien ne dépend du poste de l'utilisateur).
 ## 2. Tests
 
 ```bash
-./scripts/test.sh                    # 315 tests, ~80 s
+./scripts/test.sh                    # 317 tests, ~85 s
 ./scripts/test.sh risk               # un seul module
 ```
 
@@ -86,7 +86,7 @@ carnet-de-trading/
 │   ├── backup.py            sauvegardes vérifiées, chiffrées, exercices
 │   └── api.py               routeur, permissions, fichiers statiques, en-têtes
 ├── web/                     interface (aucune dépendance, hors ligne)
-├── tests/                   315 tests (stdlib unittest)
+├── tests/                   317 tests (stdlib unittest)
 ├── scripts/                 run.sh, test.sh, backup.py, restore.sh, mt5_agent.py
 ├── deploy/                  systemd, nginx, Caddy, agent Windows, install.sh
 └── docs/                    cahier des charges, décisions, blocages, opérations, déploiement
@@ -177,7 +177,8 @@ refusée (`REAL_TRADING_FORBIDDEN`), ordres démo désactivés par défaut
 sans renvoi. Le retour à la simulation se fait par désactivation + redémarrage,
 sans bascule silencieuse. Une **correspondance d'instruments** (`EURUSD=frxEURUSD`)
 permet de raccorder un courtier qui renomme les symboles, sans changer le reste de
-la configuration.
+la configuration ; le test de connexion liste les instruments reconnus et manquants
+(`GET /symbols` de l'agent).
 
 **Alertes sortantes.** `GET/POST /api/alerts` configure une URL (Slack, Discord,
 Teams ou générique), un niveau minimum et l'activation. Trois tentatives avec
@@ -201,7 +202,7 @@ TLS et vérifie `/api/health`. Détails et procédures de retour arrière :
 
 ## 10. État de livraison
 
-- Tests : **315 / 315 OK** (≈80 s).
+- Tests : **317 / 317 OK** (≈85 s).
 - Couverture : **89 %** global, **98 %** risque et ordres ; alertes 96 %, pont MT5 88 %, connexions 96 %.
 - Démarrage vérifié : API, interface, boucle moteur, réconciliation `OK`.
 - Environnement livré : `SIMULATION`, capital 10 000, 6 instruments, 3 stratégies.
