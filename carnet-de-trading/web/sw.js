@@ -1,7 +1,7 @@
 /* Service worker : coquille applicative hors ligne, API toujours en réseau.
    Aucune donnée de trading n'est mise en cache : l'état doit venir du serveur. */
 
-const CACHE = "carnet-shell-v3";
+const CACHE = "carnet-shell-v4";
 const SHELL = [
   "/",
   "/styles.css",

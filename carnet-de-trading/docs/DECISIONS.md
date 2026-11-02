@@ -167,7 +167,7 @@ mesuré par l'exercice automatique.
 **Contexte** : §21.3 impose 80 % global et 95 % sur le risque et les ordres.
 **Choix** : `unittest` uniquement, base temporaire par test, aucun réseau ;
 couverture mesurée avec `coverage` installé **hors du dépôt** (venv jetable).
-**Conséquences** : 333 tests, 89 % global (5 379 instructions, 565 non couvertes),
+**Conséquences** : 349 tests, 89 % global (5 379 instructions, 565 non couvertes),
 98 % risque et ordres ; la suite tourne sur n'importe quelle machine sans
 installation.
 
@@ -256,3 +256,25 @@ limites, positions) restaient vides, alors que l'API renvoyait des valeurs corre
 **Conséquences** : 5 tests de plus (333 au total), rendu du tableau de bord non
 bloquant. Leçon : les tests d'identifiants HTML ne suffisent pas, il faut aussi
 tester le comportement des fonctions de formatage.
+
+## D-15 — Canal d'alerte : URL validée, disjoncteur, configuration par environnement
+
+**Contexte** : le formulaire réaffichait l'URL masquée (« … ») ; « Enregistrer »
+l'envoyait au serveur, qui l'acceptait. Chaque envoi échouait alors en
+`UnicodeEncodeError: 'ascii' codec can't encode character '\u2026'`, avec jusqu'à
+3 000 échecs et 3 200 événements de journal en quelques minutes sur l'instance de
+production — au point de dégrader la base pour une simple URL tronquée.
+
+**Décision** :
+1. **Validation serveur** (`validate_url`) : refus explicite du masque `…`, des
+   espaces, des caractères non ASCII et des hôtes manquants ;
+2. **Interface** : le champ ne contient jamais le masque (affiché en indication
+   grisée) ; l'URL n'est envoyée que si l'utilisateur l'a réellement saisie ;
+   refus côté client d'une URL contenant `…` ;
+3. **Disjoncteur** : 5 échecs consécutifs désactivent le canal, journalisent une
+   seule fois `ALERT_CHANNEL_DISABLED` et arrêtent les tentatives automatiques ;
+4. **Environnement prioritaire** : `CARNET_WEBHOOK_URL` & co. s'appliquent au
+   démarrage et écrasent le fichier — indispensable sur disque éphémère.
+
+**Conséquences** : 16 tests supplémentaires (349 au total), plus aucun échec
+silencieux, canal reconfigurable sans ressaisie sur Render gratuit.

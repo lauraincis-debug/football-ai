@@ -59,6 +59,21 @@ instance gratuite comme un journal durable.
 
 ---
 
+## Alertes durables (survit aux redéploiements)
+
+Sur l'offre gratuite, `var/alerts.json` est effacé à chaque redéploiement. Pour ne
+pas recoller l'URL du webhook à chaque fois, mettez-la dans Render :
+
+| Variable | Valeur |
+|---|---|
+| `CARNET_WEBHOOK_URL` | l'URL complète du webhook Discord/Slack |
+| `CARNET_WEBHOOK_MIN_LEVEL` | `INFO` pour tout recevoir, `WARNING`, ou `CRITICAL` |
+| `CARNET_WEBHOOK_FORMAT` | `auto` (détection par domaine) |
+| `CARNET_WEBHOOK_ENABLED` | `1` (ou `0` pour préparer sans envoyer) |
+
+Ces variables sont **prioritaires** sur le formulaire de l'application : après un
+redéploiement, le canal se reconfigure seul. Le formulaire reste utile pour tester.
+
 ## Option 2 — Docker, n'importe où
 
 Sur un serveur ou un NAS disposant de Docker :

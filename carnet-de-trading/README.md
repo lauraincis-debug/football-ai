@@ -51,7 +51,7 @@ source d'exécution, rien ne dépend du poste de l'utilisateur).
 ## 2. Tests
 
 ```bash
-./scripts/test.sh                    # 333 tests, ~70 s
+./scripts/test.sh                    # 349 tests, ~69 s
 ./scripts/test.sh risk               # un seul module
 ```
 
@@ -89,7 +89,7 @@ carnet-de-trading/
 │   ├── backup.py            sauvegardes vérifiées, chiffrées, exercices
 │   └── api.py               routeur, permissions, fichiers statiques, en-têtes
 ├── web/                     interface (aucune dépendance, hors ligne)
-├── tests/                   333 tests (stdlib unittest)
+├── tests/                   349 tests (stdlib unittest)
 ├── scripts/                 run.sh, test.sh, backup.py, restore.sh, mt5_agent.py
 ├── deploy/                  systemd, nginx, Caddy, agent Windows, install.sh
 └── docs/                    cahier des charges, décisions, blocages, opérations, déploiement
@@ -134,7 +134,10 @@ voir `docs/BLOCKERS.md`.
 | `CARNET_OWNER_TOKEN` | — | jeton propriétaire (décisions réservées) |
 | `CARNET_BACKUP_PASSPHRASE` | — | chiffrement des sauvegardes |
 | `CARNET_ADMIN_PASSWORD` etc. | aléatoire | mots de passe initiaux |
-| `CARNET_WEBHOOK_URL` | — | amorçage du canal d'alerte (interface prioritaire) |
+| `CARNET_WEBHOOK_URL` | — | canal d'alerte : URL du webhook (**prioritaire** sur `var/alerts.json`) |
+| `CARNET_WEBHOOK_MIN_LEVEL` | `CRITICAL` | niveau minimum envoyé (`INFO`, `WARNING`, `CRITICAL`) |
+| `CARNET_WEBHOOK_FORMAT` | `auto` | format forcé (`auto`, `slack`, `discord`, `teams`, `generic`) |
+| `CARNET_WEBHOOK_ENABLED` | `1` | `0` pour amorcer l'URL sans activer les envois |
 | `CARNET_LOG_LEVEL` | `INFO` | verbosité |
 
 ## 6. Sécurité (résumé, §17)
@@ -209,7 +212,7 @@ TLS et vérifie `/api/health`. Détails et procédures de retour arrière :
 
 ## 10. État de livraison
 
-- Tests : **333 / 333 OK** (≈70 s).
+- Tests : **349 / 349 OK** (≈69 s).
 - Couverture : **89 %** global, **98 %** risque et ordres ; alertes 96 %, pont MT5 88 %, connexions 96 %.
 - Démarrage vérifié : API, interface, boucle moteur, réconciliation `OK`.
 - Environnement livré : `SIMULATION`, capital 10 000, 6 instruments, 3 stratégies.

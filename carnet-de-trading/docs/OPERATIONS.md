@@ -148,6 +148,20 @@ Routine :
 - en cas de rotation d'URL : saisir la nouvelle URL, tester, enregistrer ;
 - pour couper les sorties : **Désactiver** (les alertes restent dans l'application).
 
+Garde-fous (ajoutés après incident) :
+
+- **URL validée** : une URL contenant le caractère de masquage `…`, un espace ou
+  des caractères non ASCII est refusée avec un message explicite (« URL tronquée :
+  recollez l'URL complète ») au lieu d'échouer silencieusement à l'envoi ;
+- **disjoncteur** : après `MAX_CONSECUTIVE_FAILURES` (5) échecs consécutifs, le
+  canal se désactive de lui-même, journalise `ALERT_CHANNEL_DISABLED` et cesse
+  toute tentative automatique — plus de milliers d'échecs qui gonflent la base ;
+  un succès remet le compteur à zéro ;
+- **priorité de l'environnement** : `CARNET_WEBHOOK_URL` (et `_MIN_LEVEL`,
+  `_FORMAT`, `_ENABLED`) s'appliquent au démarrage et écrasent `var/alerts.json`.
+  C'est la façon recommandée de configurer le canal quand le disque est éphémère
+  (Render gratuit) : la configuration survit aux redéploiements.
+
 Le canal ne remplace pas la supervision : conservez une sonde externe sur
 `/api/health`.
 

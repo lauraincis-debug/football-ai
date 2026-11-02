@@ -29,6 +29,41 @@ from .util import iso, now_utc
 LEVELS = {"INFO": 0, "WARNING": 1, "CRITICAL": 2, "ALERT": 3}
 FORMATS = ("auto", "generic", "slack", "discord", "teams")
 
+#: Nombre d'échecs consécutifs avant désactivation automatique du canal : sans ce
+#: garde-fou, une URL invalide provoque deux tentatives par notification et noie la
+#: base (observé en production : plus de 3 000 échecs en quelques minutes).
+MAX_CONSECUTIVE_FAILURES = 5
+
+
+def validate_url(url: str) -> str:
+    """Nettoie et valide une URL de webhook ; lève ``ValueError`` avec un motif clair.
+
+    Le masquage affiché par l'interface contient « … » (U+2026) : si l'URL masquée
+    est renvoyée telle quelle, ``http.client`` échoue ensuite en ASCII. On refuse
+    donc explicitement ce cas au lieu de laisser un échec d'envoi incompréhensible.
+    """
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return ""
+    if "…" in cleaned or cleaned.startswith("***"):
+        raise ValueError(
+            "URL tronquée : la version masquée (« … ») ne peut pas être enregistrée. "
+            "Recollez l'URL complète du webhook")
+    if any(char.isspace() for char in cleaned):
+        raise ValueError("URL invalide : elle contient un espace")
+    try:
+        cleaned.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(
+            "URL invalide : caractères non autorisés. Copiez l'URL du webhook "
+            "directement depuis Discord/Slack") from exc
+    if not cleaned.lower().startswith(("https://", "http://")):
+        raise ValueError("l'URL du canal doit commencer par http:// ou https://")
+    parts = urllib.parse.urlsplit(cleaned)
+    if not parts.netloc:
+        raise ValueError("URL de webhook incomplète : hôte manquant")
+    return cleaned
+
 Transport = Callable[[str, bytes, dict[str, str], float], int]
 
 
@@ -81,6 +116,10 @@ class AlertNotifier:
         self.last_result: AlertResult | None = None
         self.sent = 0
         self.failures = 0
+        self.consecutive_failures = 0
+        self.auto_disabled = False
+        self.config_source = "file"
+        self._apply_env_overrides()
 
     # -- configuration ---------------------------------------------------
     def load(self) -> AlertConfig:
@@ -94,6 +133,40 @@ class AlertNotifier:
             min_level=str(data.get("min_level") or "CRITICAL"),
             enabled=bool(data.get("enabled", False)),
         )
+
+    def _apply_env_overrides(self) -> None:
+        """Variables d'environnement prioritaires sur le fichier de configuration.
+
+        Sur un hébergement à disque éphémère (offre gratuite), ``var/alerts.json``
+        disparaît à chaque redéploiement : ``CARNET_WEBHOOK_URL`` permet de garder le
+        canal configuré sans ressaisie, et de réparer une URL corrompue enregistrée
+        par une version antérieure.
+        """
+        url = os.environ.get("CARNET_WEBHOOK_URL")
+        level = os.environ.get("CARNET_WEBHOOK_MIN_LEVEL")
+        fmt = os.environ.get("CARNET_WEBHOOK_FORMAT")
+        enabled = os.environ.get("CARNET_WEBHOOK_ENABLED")
+        if not any((url, level, fmt, enabled)):
+            return
+        self.config_source = "env"
+        if url:
+            try:
+                self._config.url = validate_url(url)
+            except ValueError as exc:
+                url = None
+                if self.journal:
+                    self.journal.error("notify", "ALERT_ENV_INVALID",
+                                       f"CARNET_WEBHOOK_URL ignorée : {exc}")
+        if level and level.upper() in LEVELS:
+            self._config.min_level = level.upper()
+        if fmt and fmt in FORMATS:
+            self._config.format = fmt
+        if enabled is not None:
+            self._config.enabled = enabled.strip().lower() not in ("", "0", "false", "non")
+        elif url:
+            self._config.enabled = True
+        if self._config.enabled and not self._config.url:
+            self._config.enabled = False
 
     def save(self) -> None:
         with self._lock:
@@ -115,10 +188,10 @@ class AlertNotifier:
                   min_level: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
         with self._lock:
             if url is not None:
-                url = url.strip()
-                if url and not url.lower().startswith(("https://", "http://")):
-                    raise ValueError("l'URL du canal doit commencer par http:// ou https://")
-                self._config.url = url
+                self._config.url = validate_url(url)
+                self.consecutive_failures = 0
+                self.auto_disabled = False
+                self.config_source = "file" if url else self.config_source
             if format is not None:
                 if format not in FORMATS:
                     raise ValueError(f"format inconnu : {format} (attendu : {', '.join(FORMATS)})")
@@ -170,6 +243,9 @@ class AlertNotifier:
             "last_result": self.last_result.to_dict() if self.last_result else None,
             "sent": self.sent,
             "failures": self.failures,
+            "consecutive_failures": self.consecutive_failures,
+            "auto_disabled": self.auto_disabled,
+            "source": self.config_source,
         }
 
     @staticmethod
@@ -235,6 +311,15 @@ class AlertNotifier:
         if not self._config.url:
             return AlertResult(False, iso(now_utc()), error="canal non configuré",
                                level=str(record.get("level", "")), code=str(record.get("code", "")))
+        try:
+            self._config.url.encode("ascii")
+        except UnicodeEncodeError:
+            result = AlertResult(
+                False, iso(now_utc()),
+                error="URL invalide (caractère non ASCII) : recollez l'URL complète",
+                level=str(record.get("level", "")), code=str(record.get("code", "")))
+            self._finish(result, success=False)
+            return result
         payload = json.dumps(self.build_payload(record), ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "User-Agent": "CarnetDeTrading/1.0"}
         last_error = ""
@@ -263,14 +348,30 @@ class AlertNotifier:
 
     def _finish(self, result: AlertResult, success: bool) -> None:
         self.last_result = result
-        if success:
-            self.sent += 1
-        else:
-            self.failures += 1
-            if self.journal:
-                self.journal.error(
-                    "notify", "ALERT_CHANNEL_FAILED",
-                    f"canal d'alerte en échec après {result.attempts} tentative(s) : {result.error}")
+        tripped = False
+        with self._lock:
+            if success:
+                self.sent += 1
+                self.consecutive_failures = 0
+            else:
+                self.failures += 1
+                self.consecutive_failures += 1
+                if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES and self._config.enabled:
+                    self._config.enabled = False
+                    self.auto_disabled = True
+                    self.consecutive_failures = 0
+                    self.save()
+                    tripped = True
+        if not success and self.journal:
+            self.journal.error(
+                "notify", "ALERT_CHANNEL_FAILED",
+                f"canal d'alerte en échec après {result.attempts} tentative(s) : {result.error}")
+            if tripped:
+                self.journal.warning(
+                    "notify", "ALERT_CHANNEL_DISABLED",
+                    f"canal d'alerte désactivé automatiquement après "
+                    f"{MAX_CONSECUTIVE_FAILURES} échecs consécutifs ; corrigez l'URL puis "
+                    "réactivez-le")
 
     # -- branchement sur le centre de notifications ----------------------
     def hook(self, record: dict[str, Any]) -> None:

@@ -28,6 +28,7 @@ const app = {
   mfaSecret: null,
   timer: null,
   marketTimer: null,
+  alertUrlDirty: false,
 };
 
 /* ------------------------------------------------------------------ utils */
@@ -1144,8 +1145,18 @@ function renderConnections(state) {
   const alerts = state.alerts || {};
   $("#alerts-badge").textContent = alerts.enabled
     ? `actif (${alerts.resolved_format || "auto"})`
-    : (alerts.configured ? "configuré, désactivé" : "non configuré");
-  if (!$("#alert-url").matches(":focus")) $("#alert-url").value = alerts.url_masked || "";
+    : alerts.auto_disabled
+      ? "désactivé automatiquement (échecs)"
+      : (alerts.configured ? "configuré, désactivé" : "non configuré");
+  // Le champ ne contient JAMAIS le masque : sinon « Enregistrer » sauvegarde
+  // « … » et l'envoi échoue (caractère non ASCII). Le masque sert de repère grisé.
+  const alertUrlInput = $("#alert-url");
+  if (!alertUrlInput.matches(":focus") && !app.alertUrlDirty) {
+    alertUrlInput.value = "";
+    alertUrlInput.placeholder = alerts.url_masked
+      ? `enregistré : ${alerts.url_masked} — collez ici pour remplacer`
+      : "https://discord.com/api/webhooks/…";
+  }
   $("#alert-format").value = alerts.format || "auto";
   $("#alert-level").value = alerts.min_level || "WARNING";
   $("#alert-enabled").checked = Boolean(alerts.enabled);
@@ -1156,6 +1167,12 @@ function renderConnections(state) {
     `${alerts.sent || 0} envoyée(s)`,
     `${alerts.failures || 0} échec(s)`,
   ];
+  if (alerts.source === "env") {
+    alertBits.push("URL fournie par les variables d'environnement (prioritaire)");
+  }
+  if (alerts.auto_disabled) {
+    alertBits.push("désactivé après échecs répétés : recollez l'URL puis réactivez");
+  }
   if (alerts.last_result) {
     alertBits.push(`dernier envoi ${alerts.last_result.ok ? "réussi" : "échoué"} `
       + `${timeAgo(alerts.last_result.at)}`);
@@ -1273,12 +1290,18 @@ async function onSaveAlerts(event) {
     enabled: $("#alert-enabled").checked,
   };
   const url = $("#alert-url").value.trim();
+  if (url.includes("…")) {
+    error.textContent = "URL tronquée : recollez l'URL complète du webhook (pas la version masquée).";
+    return;
+  }
   if (url) payload.url = url;
   try {
     const result = await api.saveAlerts(payload);
     if (!result.alerts?.configured) throw new ApiError("Renseignez une URL de webhook.", 400);
+    app.alertUrlDirty = false;
+    $("#alert-url").value = "";
     toast("Canal d'alerte enregistré",
-      result.alerts.enabled ? "Les alertes critiques seront envoyées." : "Canal désactivé.", "ok");
+      result.alerts.enabled ? "Les alertes sont activées." : "Canal désactivé.", "ok");
     await refreshState();
   } catch (err) {
     error.textContent = err.message;
@@ -1663,6 +1686,9 @@ function bindEvents() {
   $("#mt5-form").addEventListener("submit", onSaveMt5);
   $("#btn-mt5-test").addEventListener("click", onTestMt5);
   $("#btn-mt5-disable").addEventListener("click", onDisableMt5);
+  $("#alert-url").addEventListener("input", () => {
+    app.alertUrlDirty = true;
+  });
   $("#alerts-form").addEventListener("submit", onSaveAlerts);
   $("#btn-alert-test").addEventListener("click", onTestAlerts);
   $("#btn-alert-disable").addEventListener("click", onDisableAlerts);
