@@ -38,6 +38,15 @@ services:
         value: /app/var
       - key: CARNET_BACKUP_DIR
         value: /app/var/backups
+      # Canal d'alerte (facultatif) — décommenter après avoir créé le webhook.
+      # Ces variables sont prioritaires sur le formulaire et survivent aux
+      # redéploiements (le disque de l'offre gratuite est éphémère).
+      # - key: CARNET_WEBHOOK_URL
+      #   value: https://discord.com/api/webhooks/…
+      # - key: CARNET_WEBHOOK_MIN_LEVEL
+      #   value: INFO
+      # - key: CARNET_WEBHOOK_FORMAT
+      #   value: auto
       # Mot de passe administrateur généré par Render : visible dans le tableau
       # de bord (Environment), à changer dans l'application après la 1re connexion.
       - key: CARNET_ADMIN_PASSWORD

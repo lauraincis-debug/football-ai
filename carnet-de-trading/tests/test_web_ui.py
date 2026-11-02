@@ -133,7 +133,7 @@ class PwaTests(unittest.TestCase):
         for asset in ("/styles.css", "/js/app.js", "/manifest.webmanifest",
                       "/icons/icon-192.png"):
             self.assertIn(asset, sw)
-        self.assertIn("carnet-shell-v3", sw)
+        self.assertIn("carnet-shell-v4", sw)
         self.assertIn('url.pathname.startsWith("/api/")', sw)
 
     def test_png_files_have_expected_dimensions(self):
@@ -244,6 +244,36 @@ process.stdout.write(JSON.stringify(out));
         self.assertEqual(normalize(payload["signed"]), "-50,71$")
         self.assertEqual(normalize(payload["numAuto"]), "1 234,50")
         self.assertEqual(normalize(payload["numNeg"]), "-2,50")
+
+
+class AlertFormSafetyTests(unittest.TestCase):
+    """Le champ webhook ne doit jamais renvoyer l'URL masquée (« … »).
+
+    Régression observée en production : le formulaire réaffichait le masque, la
+    sauvegarde l'enregistrait, puis chaque envoi échouait en ASCII.
+    """
+
+    def test_masked_url_is_never_written_into_the_input(self):
+        self.assertNotIn('$("#alert-url").value = alerts.url_masked', APP)
+        self.assertIn('alertUrlInput.value = "";', APP)
+        self.assertIn("alertUrlInput.placeholder", APP)
+        self.assertIn("enregistré :", APP)
+
+    def test_user_edits_are_tracked(self):
+        self.assertIn("alertUrlDirty", APP)
+        self.assertIn('$("#alert-url").addEventListener("input"', APP)
+
+    def test_save_refuses_an_ellipsis_url(self):
+        self.assertIn('url.includes("…")', APP)
+        self.assertIn("URL tronquée", APP)
+
+    def test_dirty_flag_is_cleared_after_success(self):
+        self.assertIn("app.alertUrlDirty = false;", APP)
+
+    def test_auto_disabled_state_is_surfaced(self):
+        self.assertIn("auto_disabled", APP)
+        self.assertIn("désactivé automatiquement", APP)
+        self.assertIn('alerts.source === "env"', APP)
 
 
 class ApiClientTests(unittest.TestCase):

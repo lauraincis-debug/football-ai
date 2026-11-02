@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import unittest
+from unittest import mock
 
 from helpers import ApiTestCase, TempProject
 
-from carnet.alerts import AlertNotifier
+from carnet.alerts import MAX_CONSECUTIVE_FAILURES, AlertNotifier, validate_url
 
 
 class FakeTransport:
@@ -176,6 +178,126 @@ class AlertNotifierTests(unittest.TestCase):
         self.assertEqual(self.transport.calls, [])
 
 
+class AlertUrlSafetyTests(unittest.TestCase):
+    """Régression : l'URL masquée (« … ») ne doit jamais être enregistrée.
+
+    Observé en production : le formulaire réaffichait l'URL masquée, « Enregistrer »
+    la renvoyait, le serveur l'acceptait, puis chaque envoi échouait en ASCII et
+    gonflait la base de milliers d'échecs.
+    """
+
+    MASKED = "https://discord.com/api/webhooks/1566815286643138…/…"
+    REAL = "https://discord.com/api/webhooks/1566815286643138560/IpCs0yME0uBhBlMx"
+
+    def setUp(self):
+        self.project = TempProject()
+        self.addCleanup(self.project.cleanup)
+        self.path = self.project.path / "var" / "alerts.json"
+        self.transport = FakeTransport()
+        self.journal = _RecordingJournal()
+        self.notifier = AlertNotifier(self.path, journal=self.journal,
+                                      transport=self.transport, retries=1,
+                                      backoff=(0.0, 0.0, 0.0))
+
+    def test_validate_url_accepts_complete_webhook(self):
+        self.assertEqual(validate_url(f"  {self.REAL}  "), self.REAL)
+        self.assertEqual(validate_url(""), "")
+
+    def test_validate_url_refuses_masked_or_non_ascii(self):
+        for bad in (self.MASKED, "https://exemple.fr/hook…", "***",
+                    "https://exemple.fr/ho ok", "https://exemple.fr/é"):
+            with self.assertRaises(ValueError, msg=bad):
+                validate_url(bad)
+
+    def test_validate_url_refuses_truncated_hosts(self):
+        for bad in ("discord.com/api/webhooks/1/x", "https://", "https:///hook"):
+            with self.assertRaises(ValueError, msg=bad):
+                validate_url(bad)
+
+    def test_configure_refuses_masked_url_and_keeps_previous_value(self):
+        self.notifier.configure(url=self.REAL, enabled=True)
+        with self.assertRaises(ValueError) as caught:
+            self.notifier.configure(url=self.MASKED)
+        self.assertIn("tronquée", str(caught.exception))
+        self.assertEqual(self.notifier.config.url, self.REAL)
+        self.assertTrue(self.notifier.config.enabled)
+
+    def test_configure_without_url_keeps_existing_target(self):
+        self.notifier.configure(url=self.REAL, enabled=True)
+        status = self.notifier.configure(min_level="INFO")
+        self.assertEqual(self.notifier.config.url, self.REAL)
+        self.assertEqual(status["min_level"], "INFO")
+        self.assertTrue(status["enabled"])
+
+    def test_send_with_non_ascii_url_fails_cleanly(self):
+        self.notifier.configure(url=self.REAL, enabled=True)
+        self.notifier.config.url = self.MASKED  # simule un fichier corrompu
+        result = self.notifier.send({"level": "CRITICAL", "code": "TEST",
+                                     "title": "t", "message": "m"})
+        self.assertFalse(result.ok)
+        self.assertIn("URL invalide", result.error)
+        self.assertEqual(self.transport.calls, [])
+
+    def test_channel_disables_itself_after_repeated_failures(self):
+        self.notifier.configure(url=self.REAL, enabled=True)
+        self.transport.status = 500
+        for _ in range(MAX_CONSECUTIVE_FAILURES):
+            self.notifier.send({"level": "CRITICAL", "code": "TEST", "title": "t",
+                                "message": "m"})
+        self.assertFalse(self.notifier.config.enabled)
+        self.assertTrue(self.notifier.status()["auto_disabled"])
+        calls = len(self.transport.calls)
+        self.notifier.hook({"level": "CRITICAL", "code": "TEST", "title": "t", "message": "m"})
+        time.sleep(0.05)
+        self.assertEqual(len(self.transport.calls), calls,
+                         "plus aucun envoi automatique après disjonction")
+        self.assertIn("ALERT_CHANNEL_DISABLED", [code for _, code, _ in self.journal.warnings])
+
+    def test_success_resets_the_failure_counter(self):
+        self.notifier.configure(url=self.REAL, enabled=True)
+        self.transport.statuses = [500, 200]
+        self.notifier.send({"level": "CRITICAL", "code": "T", "title": "t", "message": "m"})
+        self.assertNotifierCounter(1)
+        self.notifier.send({"level": "CRITICAL", "code": "T", "title": "t", "message": "m"})
+        self.assertNotifierCounter(0)
+        self.assertTrue(self.notifier.config.enabled)
+
+    def assertNotifierCounter(self, expected):
+        self.assertEqual(self.notifier.consecutive_failures, expected)
+
+    def test_environment_variable_configures_the_channel(self):
+        with mock.patch.dict(os.environ, {"CARNET_WEBHOOK_URL": self.REAL,
+                                          "CARNET_WEBHOOK_MIN_LEVEL": "INFO"}, clear=False):
+            notifier = AlertNotifier(self.path, transport=self.transport)
+        self.assertEqual(notifier.config.url, self.REAL)
+        self.assertTrue(notifier.config.enabled)
+        self.assertEqual(notifier.config.min_level, "INFO")
+        self.assertEqual(notifier.status()["resolved_format"], "discord")
+        self.assertEqual(notifier.status()["source"], "env")
+
+    def test_invalid_environment_variable_is_ignored(self):
+        with mock.patch.dict(os.environ, {"CARNET_WEBHOOK_URL": self.MASKED}, clear=False):
+            notifier = AlertNotifier(self.path, journal=self.journal, transport=self.transport)
+        self.assertEqual(notifier.config.url, "")
+        self.assertFalse(notifier.config.enabled)
+        self.assertIn("ALERT_ENV_INVALID", [code for _, code, _ in self.journal.errors])
+
+
+class _RecordingJournal:
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+
+    def error(self, scope, code, message):
+        self.errors.append((scope, code, message))
+
+    def warning(self, scope, code, message):
+        self.warnings.append((scope, code, message))
+
+    def info(self, scope, code, message):
+        pass
+
+
 class AlertApiTests(ApiTestCase):
     def setUp(self):
         super().setUp()
@@ -212,6 +334,14 @@ class AlertApiTests(ApiTestCase):
                                  self.token)
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "ALERT_CONFIG_INVALID")
+
+    def test_masked_url_is_refused_with_a_clear_message(self):
+        status, body = self.post("/api/alerts", {
+            "url": "https://discord.com/api/webhooks/1566…/…", "enabled": True},
+            self.token)
+        self.assertEqual(status, 400, body)
+        self.assertEqual(body["code"], "ALERT_CONFIG_INVALID")
+        self.assertIn("tronquée", json.dumps(body, ensure_ascii=False))
 
     def test_viewer_cannot_manage_alerts(self):
         self.engine.users.create("lecteur-alertes", "Lecteur!Password2026", "VIEWER")
