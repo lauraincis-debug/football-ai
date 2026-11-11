@@ -1,3 +1,4 @@
+import {guard} from "./auth.mjs";
 // Gemini calls are made only from the server. Never expose GEMINI_API_KEY to Vite.
 const models = {script: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash', voice: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', image: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image'};
 const voices = new Set(['Kore','Puck','Charon','Aoede','Leda']);
@@ -9,7 +10,7 @@ async function gemini(model, payload) {
 }
 function wav(pcm) {const data=Buffer.from(pcm,'base64'),header=Buffer.alloc(44);header.write('RIFF',0);header.writeUInt32LE(36+data.length,4);header.write('WAVEfmt ',8);header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);header.writeUInt32LE(24000,24);header.writeUInt32LE(48000,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);header.write('data',36);header.writeUInt32LE(data.length,40);return Buffer.concat([header,data]);}
 export async function handleGemini(req,res,next) {
- const route=(req.url||'').split('?')[0];if(!['/api/gemini/script','/api/gemini/voice','/api/gemini/image'].includes(route)){if(next)return next();return send(res,404,{error:'Non trouvé.'})}
+ const route=(req.url||'').split('?')[0];if(route.startsWith('/api/auth/')||route.startsWith('/api/gemini/')){if(!await guard(req,res,route))return}if(!['/api/gemini/script','/api/gemini/voice','/api/gemini/image'].includes(route)){if(next)return next();return send(res,404,{error:'Non trouvé.'})}
  if(req.method!=='POST')return send(res,405,{error:'Méthode non autorisée.'});
  if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'Gemini n’est pas configuré sur le serveur. Définissez GEMINI_API_KEY côté serveur.'});
  try {let chunks=[],size=0;for await(const chunk of req){size+=chunk.length;if(size>16000)return send(res,413,{error:'Demande trop volumineuse.'});chunks.push(chunk)}let body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');
