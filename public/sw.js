@@ -1,4 +1,4 @@
-const CACHE_NAME = "football-ai-ultra-v4.0";
+const CACHE_NAME = "cuisine-land-studio-v1";
 const CORE_ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

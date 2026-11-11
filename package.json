@@ -9,7 +9,8 @@
     "build": "vite build && vite build --config vite.cloe.config.js && vite build --config vite.cloe-app.config.js",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test:model": "node scripts/verify-model.mjs",
-    "deploy": "./deploy-firebase.sh"
+    "deploy": "./deploy-firebase.sh",
+    "start": "node server/start.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

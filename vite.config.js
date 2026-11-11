@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { handleGemini } from "./server/gemini.mjs";
 
 export default defineConfig({
   base: "/",
-  plugins: [react()],
+  plugins: [react(), {name: "gemini-api", configureServer(server) { server.middlewares.use(handleGemini); }, configurePreviewServer(server) { server.middlewares.use(handleGemini); }}],
   build: {
     outDir: "www",
     emptyOutDir: true,

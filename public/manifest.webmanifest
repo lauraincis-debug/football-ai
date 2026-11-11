@@ -1,13 +1,13 @@
 {
-  "name": "Football AI Ultra — Système Prédictif Adaptatif",
-  "short_name": "Football AI",
-  "description": "Prédictions football hybrides Elo + Poisson Dixon-Coles, Coupon combiné intelligent et détection de Value Bet.",
+  "name": "Cuisine Land — Studio créatif",
+  "short_name": "Cuisine Land",
+  "description": "Créez et téléchargez vos vidéos cuisine.",
   "lang": "fr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#040510",
-  "theme_color": "#090b1e",
+  "background_color": "#f8f8f3",
+  "theme_color": "#315b3d",
   "icons": [
     {
       "src": "/icon.svg",
