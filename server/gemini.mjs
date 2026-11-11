@@ -1,11 +1,11 @@
 import {guard} from "./auth.mjs";
 // Gemini calls are made only from the server. Never expose GEMINI_API_KEY to Vite.
-const models = {script: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash', voice: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts', image: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image'};
+const models = {script: process.env.GEMINI_TEXT_MODEL || 'gemini-3.5-flash-lite', voice: process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts', image: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-lite-image'};
 const voices = new Set(['Kore','Puck','Charon','Aoede','Leda']);
 const send = (res, status, data) => {res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))};
 async function gemini(model, payload) {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},body:JSON.stringify(payload),signal:AbortSignal.timeout(90000)});
-  if(!response.ok){let e=new Error(response.status===429?'Quota Gemini atteint. Réessayez plus tard.':response.status===401||response.status===403?'Clé Gemini refusée ou accès au modèle indisponible.':`Gemini est indisponible (code ${response.status}). Vérifiez le modèle et son quota.`);e.status=response.status===429?429:502;throw e}
+  if(!response.ok){let e=new Error(response.status===429?'Quota Gemini indisponible ou atteint pour ce modèle. Vérifiez les limites et la facturation de votre projet Google ; un quota gratuit peut être nul.':response.status===401||response.status===403?'Clé Gemini refusée ou accès au modèle indisponible.':response.status===404?`Gemini : modèle ${model} introuvable ou inaccessible pour ce projet (404).`: `Gemini est indisponible (code ${response.status}). Vérifiez le modèle et son quota.`);e.status=response.status===429?429:502;throw e}
   return response.json();
 }
 function wav(pcm) {const data=Buffer.from(pcm,'base64'),header=Buffer.alloc(44);header.write('RIFF',0);header.writeUInt32LE(36+data.length,4);header.write('WAVEfmt ',8);header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);header.writeUInt32LE(24000,24);header.writeUInt32LE(48000,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);header.write('data',36);header.writeUInt32LE(data.length,40);return Buffer.concat([header,data]);}
